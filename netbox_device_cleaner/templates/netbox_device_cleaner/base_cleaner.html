@@ -1,0 +1,315 @@
+{% extends 'base/layout.html' %}
+
+{% block title %}{% block cleaner_title %}IPAM Health Suite{% endblock %}{% endblock %}
+
+{% block head %}
+{{ block.super }}
+<style>
+:root {
+  --cleaner-primary: #4b134f;
+  --cleaner-primary-light: #7b2d80;
+  --cleaner-danger:  #c94b4b;
+  --cleaner-warning: #e67e22;
+  --cleaner-success: #27ae60;
+  --cleaner-info:    #2980b9;
+  --cleaner-sidebar-bg: #1a1a2e;
+  --cleaner-sidebar-hover: #16213e;
+}
+
+/* ── Hero ──────────────────────────────────────────────── */
+.cleaner-hero {
+  background: linear-gradient(135deg, var(--cleaner-danger) 0%, var(--cleaner-primary) 100%);
+  color: white;
+  padding: 1.75rem 2rem;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.cleaner-hero h1 { font-size: 1.6rem; font-weight: 700; margin: 0; }
+.cleaner-hero p  { margin: 0.3rem 0 0; opacity: .85; font-size: .95rem; }
+.cleaner-hero .badge { font-size: .8rem; vertical-align: middle; }
+
+/* ── Sidebar ────────────────────────────────────────────── */
+.cleaner-sidebar {
+  background: var(--cleaner-sidebar-bg);
+  border-radius: 10px;
+  padding: 1rem 0;
+  min-height: 400px;
+  position: sticky;
+  top: 16px;
+}
+.cleaner-sidebar .sidebar-title {
+  color: #aaa;
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: .5rem 1rem .25rem;
+}
+.cleaner-sidebar a {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: #ccc;
+  text-decoration: none;
+  padding: .5rem 1rem;
+  font-size: .88rem;
+  border-left: 3px solid transparent;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.cleaner-sidebar a:hover {
+  background: var(--cleaner-sidebar-hover);
+  color: #fff;
+  border-left-color: var(--cleaner-primary-light);
+}
+.cleaner-sidebar a.active {
+  background: var(--cleaner-sidebar-hover);
+  color: #fff;
+  border-left-color: var(--cleaner-danger);
+  font-weight: 600;
+}
+.cleaner-sidebar .nav-badge {
+  margin-left: auto;
+  font-size: .7rem;
+  padding: .15rem .45rem;
+  border-radius: 999px;
+}
+
+/* ── Cards ──────────────────────────────────────────────── */
+.cleaner-card {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.1);
+  transition: transform .15s, box-shadow .15s;
+}
+.cleaner-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+
+/* ── Tabs ───────────────────────────────────────────────── */
+.cleaner-tabs .nav-link {
+  color: #666;
+  border-radius: 8px 8px 0 0;
+  font-size: .88rem;
+  padding: .5rem 1rem;
+}
+.cleaner-tabs .nav-link.active {
+  color: var(--cleaner-primary);
+  font-weight: 600;
+  border-color: #dee2e6 #dee2e6 #fff;
+}
+.cleaner-tabs .tab-badge {
+  font-size: .7rem;
+  padding: .1rem .4rem;
+  border-radius: 999px;
+  margin-left: .3rem;
+}
+
+/* ── Table ──────────────────────────────────────────────── */
+.cleaner-table th { font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; color: #888; }
+.cleaner-table td { vertical-align: middle; font-size: .9rem; }
+.cleaner-table .check-col { width: 36px; }
+
+/* ── Bulk action bar ────────────────────────────────────── */
+.bulk-action-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--cleaner-primary);
+  color: white;
+  padding: .75rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  z-index: 1050;
+  box-shadow: 0 -4px 16px rgba(0,0,0,.3);
+  transform: translateY(100%);
+  transition: transform .25s ease;
+}
+.bulk-action-bar.visible { transform: translateY(0); }
+.bulk-action-bar .selected-count { font-weight: 600; }
+
+/* ── Alerts & utils ─────────────────────────────────────── */
+.issue-count {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.issue-count.ok    { color: var(--cleaner-success); }
+.issue-count.warn  { color: var(--cleaner-danger); }
+.metric-card { cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row g-3">
+
+    {# ── Sidebar ──────────────────────────────────────────── #}
+    <div class="col-12 col-lg-2 d-none d-lg-block">
+      <div class="cleaner-sidebar">
+        <div class="sidebar-title">Dashboard</div>
+        <a href="{% url 'plugins:netbox_device_cleaner:dashboard' %}"
+           class="{% if active_module == 'dashboard' %}active{% endif %}">
+          <i class="mdi mdi-view-dashboard"></i> Vue d'ensemble
+        </a>
+
+        <div class="sidebar-title mt-2">Analyse IPAM</div>
+        <a href="{% url 'plugins:netbox_device_cleaner:vlans' %}"
+           class="{% if active_module == 'vlans' %}active{% endif %}">
+          <i class="mdi mdi-tag-multiple"></i> Santé VLANs
+          {% if sidebar_counts.vlans_dup %}
+            <span class="nav-badge bg-danger">{{ sidebar_counts.vlans_dup }}</span>
+          {% endif %}
+        </a>
+        <a href="{% url 'plugins:netbox_device_cleaner:ips' %}"
+           class="{% if active_module == 'ips' %}active{% endif %}">
+          <i class="mdi mdi-ip-network"></i> Adresses IP
+          {% if sidebar_counts.ips_dup %}
+            <span class="nav-badge bg-danger">{{ sidebar_counts.ips_dup }}</span>
+          {% endif %}
+        </a>
+        <a href="{% url 'plugins:netbox_device_cleaner:prefixes' %}"
+           class="{% if active_module == 'prefixes' %}active{% endif %}">
+          <i class="mdi mdi-sitemap"></i> Préfixes
+          {% if sidebar_counts.prefixes_overlap %}
+            <span class="nav-badge bg-warning text-dark">{{ sidebar_counts.prefixes_overlap }}</span>
+          {% endif %}
+        </a>
+
+        <div class="sidebar-title mt-2">Équipements</div>
+        <a href="{% url 'plugins:netbox_device_cleaner:devices' %}"
+           class="{% if active_module == 'devices' %}active{% endif %}">
+          <i class="mdi mdi-server"></i> Santé Équipements
+          {% if sidebar_counts.devices_no_ip %}
+            <span class="nav-badge bg-warning text-dark">{{ sidebar_counts.devices_no_ip }}</span>
+          {% endif %}
+        </a>
+        <a href="{% url 'plugins:netbox_device_cleaner:orphans' %}"
+           class="{% if active_module == 'orphans' %}active{% endif %}">
+          <i class="mdi mdi-ghost"></i> Objets Orphelins
+          {% if sidebar_counts.services_orphan %}
+            <span class="nav-badge bg-warning text-dark">{{ sidebar_counts.services_orphan }}</span>
+          {% endif %}
+        </a>
+
+        <div class="sidebar-title mt-2">Actions</div>
+        <a href="{% url 'plugins:netbox_device_cleaner:purge' %}"
+           class="{% if active_module == 'purge' %}active{% endif %}">
+          <i class="mdi mdi-broom"></i> Purge Équipements
+        </a>
+      </div>
+    </div>
+
+    {# ── Main content ─────────────────────────────────────── #}
+    <div class="col-12 col-lg-10">
+      {% block cleaner_content %}{% endblock %}
+    </div>
+
+  </div>
+</div>
+
+{# ── Bulk action bar (partagée, contrôlée par JS) ─────────── #}
+<div class="bulk-action-bar" id="bulkActionBar">
+  <span class="selected-count"><span id="bulkCount">0</span> sélectionné(s)</span>
+  <div class="ms-auto d-flex gap-2">
+    {% block bulk_actions %}{% endblock %}
+    <button class="btn btn-sm btn-light" onclick="clearAllChecks()">
+      <i class="mdi mdi-close"></i> Désélectionner
+    </button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+// ── CSRF helper ──────────────────────────────────────────
+function getCsrf() {
+  return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+}
+
+// ── AJAX POST générique ──────────────────────────────────
+async function cleanerPost(url, action, params = {}) {
+  const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action, ...params });
+  const r = await fetch(url, { method: 'POST', body });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ── Gestion des checkboxes et barre d'actions ────────────
+function updateBulkBar() {
+  const checked = document.querySelectorAll('input.row-check:checked');
+  const bar = document.getElementById('bulkActionBar');
+  const cnt = document.getElementById('bulkCount');
+  if (!bar) return;
+  cnt.textContent = checked.length;
+  bar.classList.toggle('visible', checked.length > 0);
+}
+
+function clearAllChecks() {
+  document.querySelectorAll('input.row-check').forEach(c => c.checked = false);
+  const all = document.getElementById('checkAll');
+  if (all) all.checked = false;
+  updateBulkBar();
+}
+
+function getCheckedIds() {
+  return Array.from(document.querySelectorAll('input.row-check:checked'))
+              .map(c => c.value);
+}
+
+// ── Toggle tout sélectionner ─────────────────────────────
+document.addEventListener('change', e => {
+  if (e.target.id === 'checkAll') {
+    document.querySelectorAll('input.row-check').forEach(c => {
+      c.checked = e.target.checked;
+    });
+    updateBulkBar();
+  }
+  if (e.target.classList.contains('row-check')) updateBulkBar();
+});
+
+// ── Filtre texte en temps réel ───────────────────────────
+function filterTable(inputId, tableId) {
+  const q = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll(`#${tableId} tbody tr`).forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+// ── Toast notification ───────────────────────────────────
+function showToast(msg, type = 'success') {
+  const container = document.getElementById('toastContainer') ||
+    (() => {
+      const d = document.createElement('div');
+      d.id = 'toastContainer';
+      d.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+      document.body.appendChild(d);
+      return d;
+    })();
+  const colors = { success: '#27ae60', danger: '#c94b4b', warning: '#e67e22', info: '#2980b9' };
+  const toast = document.createElement('div');
+  toast.style.cssText = `background:${colors[type]||colors.info};color:white;padding:.75rem 1.25rem;
+    border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.3);font-size:.9rem;
+    animation:slideIn .2s ease;max-width:320px;`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// ── Spinner sur bouton ───────────────────────────────────
+function btnLoading(btn, loading) {
+  if (loading) {
+    btn.dataset.origText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>En cours…';
+    btn.disabled = true;
+  } else {
+    btn.innerHTML = btn.dataset.origText || btn.innerHTML;
+    btn.disabled = false;
+  }
+}
+
+// ── Animation CSS ────────────────────────────────────────
+const style = document.createElement('style');
+style.textContent = '@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}';
+document.head.appendChild(style);
+</script>
+{% endblock %}

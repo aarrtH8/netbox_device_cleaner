@@ -1,0 +1,18 @@
+{# Paramètres : url, tab, icon, label, count, severity (danger|warning|info, défaut=danger si count>0) #}
+{% with sev=severity|default:'danger' %}
+<div class="col-6 col-md-4 col-xl-3">
+  <a href="{{ url }}?tab={{ tab }}" class="text-decoration-none">
+    <div class="card cleaner-card metric-card h-100
+      {% if count > 0 %}border-{{ sev }} border-2{% else %}border-success{% endif %}">
+      <div class="card-body text-center py-3">
+        <div class="issue-count {% if count > 0 %}warn{% else %}ok{% endif %}">
+          {{ count }}
+        </div>
+        <div class="mt-1 small text-muted d-flex align-items-center justify-content-center gap-1">
+          <i class="mdi mdi-{{ icon }}"></i>{{ label }}
+        </div>
+      </div>
+    </div>
+  </a>
+</div>
+{% endwith %}

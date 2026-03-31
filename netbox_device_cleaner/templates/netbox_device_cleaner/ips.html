@@ -1,0 +1,320 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Santé Adresses IP — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-ip-network" style="font-size:2.2rem;opacity:.9"></i>
+    <div>
+      <h1>Santé des Adresses IP</h1>
+      <p>Détection des doublons, IPs orphelines et IPs hors préfixe</p>
+    </div>
+    <div class="ms-auto">
+      <span class="badge bg-danger fs-6">{{ tab_counts.duplicates }} doublon{% if tab_counts.duplicates != 1 %}s{% endif %}</span>
+      <span class="badge bg-warning text-dark fs-6 ms-1">{{ tab_counts.orphans }} orpheline{% if tab_counts.orphans != 1 %}s{% endif %}</span>
+    </div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs cleaner-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'duplicates' %}active{% endif %}" href="?tab=duplicates">
+      IPs en double
+      {% if tab_counts.duplicates %}<span class="tab-badge bg-danger text-white">{{ tab_counts.duplicates }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'orphans' %}active{% endif %}" href="?tab=orphans">
+      Orphelines
+      {% if tab_counts.orphans %}<span class="tab-badge bg-warning text-dark">{{ tab_counts.orphans }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'outside_prefix' %}active{% endif %}" href="?tab=outside_prefix">
+      Hors préfixe
+      {% if tab_counts.outside_prefix %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.outside_prefix }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
+
+{# ── Onglet : IPs en double ── #}
+{% if tab == 'duplicates' %}
+  {% if groups %}
+    {% for group in groups %}
+    <div class="card cleaner-card mb-3">
+      <div class="card-header d-flex align-items-center" style="background:rgba(201,75,75,.08)">
+        <i class="mdi mdi-alert-circle text-danger me-2"></i>
+        <strong>{{ group.address }}</strong>
+        <span class="ms-2 text-muted">— {{ group.ips|length }} occurrence{% if group.ips|length != 1 %}s{% endif %}</span>
+        {% if group.vrf_id %}
+          <span class="badge bg-info ms-2">VRF : {{ group.ips.0.vrf }}</span>
+        {% else %}
+          <span class="badge bg-secondary ms-2">VRF globale</span>
+        {% endif %}
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th>ID</th><th>Adresse</th><th>VRF</th><th>Assigné à</th>
+              <th>DNS</th><th>Statut</th><th>Tenant</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ip in group.ips %}
+            <tr id="ip-row-{{ ip.pk }}">
+              <td class="text-muted">{{ ip.pk }}</td>
+              <td><strong>{{ ip.address }}</strong></td>
+              <td>{{ ip.vrf|default:'Globale' }}</td>
+              <td>
+                {% if ip.assigned_object %}
+                  <a href="{{ ip.assigned_object.get_absolute_url }}" target="_blank">
+                    {{ ip.assigned_object }}
+                  </a>
+                {% else %}
+                  <span class="text-muted fst-italic">Non assignée</span>
+                {% endif %}
+              </td>
+              <td>{{ ip.dns_name|default:'—' }}</td>
+              <td>
+                <span class="badge bg-{% if ip.status == 'active' %}success{% elif ip.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                  {{ ip.get_status_display }}
+                </span>
+              </td>
+              <td>{{ ip.tenant|default:'—' }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteIp({{ ip.pk }}, 'ip-row-{{ ip.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/ip-addresses/{{ ip.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucune adresse IP en double détectée.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : IPs orphelines ── #}
+{% if tab == 'orphans' %}
+  {% if page_obj and page_obj.object_list %}
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="text-muted small">
+        {{ page_obj.paginator.count }} IP{% if page_obj.paginator.count != 1 %}s{% endif %} orpheline{% if page_obj.paginator.count != 1 %}s{% endif %}
+      </span>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-danger" onclick="deleteAllOrphans()">
+          <i class="mdi mdi-delete-sweep me-1"></i>Supprimer toutes les orphelines
+        </button>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('checkAll').click()">
+          <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+        </button>
+      </div>
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0" id="ipTable">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Adresse</th><th>VRF</th><th>DNS</th><th>Statut</th>
+              <th>Tenant</th><th>Créé le</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ip in page_obj %}
+            <tr id="ip-row-{{ ip.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ ip.pk }}"></td>
+              <td><strong>{{ ip.address }}</strong></td>
+              <td>{{ ip.vrf|default:'Globale' }}</td>
+              <td>{{ ip.dns_name|default:'—' }}</td>
+              <td>
+                <span class="badge bg-{% if ip.status == 'active' %}success{% else %}secondary{% endif %}">
+                  {{ ip.get_status_display }}
+                </span>
+              </td>
+              <td>{{ ip.tenant|default:'—' }}</td>
+              <td>{{ ip.created|date:"d/m/Y" }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteIp({{ ip.pk }}, 'ip-row-{{ ip.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-3">
+      <ul class="pagination pagination-sm justify-content-center">
+        {% if page_obj.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?tab=orphans&page={{ page_obj.previous_page_number }}">‹</a>
+          </li>
+        {% endif %}
+        <li class="page-item disabled">
+          <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?tab=orphans&page={{ page_obj.next_page_number }}">›</a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucune adresse IP orpheline.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : IPs hors préfixe ── #}
+{% if tab == 'outside_prefix' %}
+  {% if truncated %}
+  <div class="alert alert-warning">
+    <i class="mdi mdi-alert me-2"></i>
+    <strong>Résultats tronqués</strong> : {{ total }} IPs hors préfixe détectées, affichage limité à 500.
+  </div>
+  {% endif %}
+  {% if ips %}
+    <div class="alert alert-info mb-3">
+      <i class="mdi mdi-information me-2"></i>
+      Ces adresses n'appartiennent à aucun préfixe défini dans NetBox. Vérifiez si elles sont intentionnelles avant de les supprimer.
+    </div>
+    <div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('checkAll').click()">
+        <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+      </button>
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Adresse</th><th>VRF</th><th>DNS</th><th>Assigné à</th><th>Statut</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ip in ips %}
+            <tr id="ip-row-{{ ip.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ ip.pk }}"></td>
+              <td><strong>{{ ip.address }}</strong></td>
+              <td>{{ ip.vrf|default:'Globale' }}</td>
+              <td>{{ ip.dns_name|default:'—' }}</td>
+              <td>
+                {% if ip.assigned_object %}
+                  <a href="{{ ip.assigned_object.get_absolute_url }}" target="_blank">
+                    {{ ip.assigned_object }}
+                  </a>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <span class="badge bg-secondary">{{ ip.get_status_display }}</span>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteIp({{ ip.pk }}, 'ip-row-{{ ip.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Toutes les IPs appartiennent à un préfixe défini.
+    </div>
+  {% endif %}
+{% endif %}
+
+{% block bulk_actions %}
+<button class="btn btn-sm btn-danger" onclick="bulkDeleteIps()">
+  <i class="mdi mdi-delete-sweep me-1"></i>Supprimer la sélection
+</button>
+{% endblock %}
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+const IPS_URL = "{% url 'plugins:netbox_device_cleaner:ips' %}";
+
+async function deleteIp(pk, rowId) {
+  if (!confirm('Supprimer cette adresse IP ?')) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(IPS_URL, 'delete_ip', { ip_id: pk });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function bulkDeleteIps() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} adresse(s) IP ?`)) return;
+  const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_ips_bulk' });
+  ids.forEach(id => body.append('ip_ids[]', id));
+  try {
+    const r = await fetch(IPS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      ids.forEach(id => document.getElementById(`ip-row-${id}`)?.remove());
+      showToast(data.message, 'success');
+      clearAllChecks();
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+}
+
+async function deleteAllOrphans() {
+  const count = {{ tab_counts.orphans|default:0 }};
+  if (!confirm(`Supprimer TOUTES les ${count} IPs orphelines ? Action irréversible.`)) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(IPS_URL, 'delete_orphans');
+    if (r.success) {
+      showToast(r.message, 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+</script>
+{% endblock %}

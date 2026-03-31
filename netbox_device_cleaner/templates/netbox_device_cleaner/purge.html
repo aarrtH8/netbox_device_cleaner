@@ -1,0 +1,392 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Purge Équipements — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+{# ── Hero ── #}
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-broom" style="font-size:2.5rem;opacity:.9"></i>
+    <div>
+      <h1><i class="mdi mdi-broom me-2"></i>Purge Équipements</h1>
+      <p>Suppression complète des objets NetBox liés à un équipement</p>
+    </div>
+    <div class="ms-auto text-end">
+      <div class="fs-4 fw-bold">{{ total }}</div>
+      <div class="small opacity-75">équipement{% if total != 1 %}s{% endif %} au total</div>
+    </div>
+  </div>
+</div>
+
+{# ── Filtres ── #}
+<div class="card cleaner-card mb-3">
+  <div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small text-muted mb-1">Recherche</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text"><i class="mdi mdi-magnify"></i></span>
+          <input type="text" id="searchInput" class="form-control"
+                 placeholder="Filtrer par nom…"
+                 oninput="applyFilters()">
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Site</label>
+        <select id="filterSite" class="form-select form-select-sm" onchange="applyFilters()">
+          <option value="">Tous</option>
+          {% for site in sites %}
+          <option value="{{ site.name }}">{{ site.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Rôle</label>
+        <select id="filterRole" class="form-select form-select-sm" onchange="applyFilters()">
+          <option value="">Tous</option>
+          {% for role in roles %}
+          <option value="{{ role.name }}">{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small text-muted mb-1">Tenant</label>
+        <select id="filterTenant" class="form-select form-select-sm" onchange="applyFilters()">
+          <option value="">Tous</option>
+          {% for tenant in tenants %}
+          <option value="{{ tenant.name }}">{{ tenant.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <button class="btn btn-sm btn-outline-secondary w-100" onclick="resetFilters()">
+          <i class="mdi mdi-filter-remove me-1"></i>Réinitialiser
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Tableau équipements ── #}
+<div class="card cleaner-card mb-3">
+  <div class="card-body p-0">
+    <table class="table table-sm cleaner-table mb-0" id="deviceTable">
+      <thead>
+        <tr>
+          <th class="check-col">
+            <input type="checkbox" id="checkAll" title="Tout sélectionner">
+          </th>
+          <th>Équipement</th>
+          <th>Type</th>
+          <th>Site</th>
+          <th>Rôle</th>
+          <th>Tenant</th>
+          <th title="Nombre d'IPs assignées aux interfaces">IPs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for device in devices %}
+        <tr data-site="{{ device.site.name|default:'' }}"
+            data-role="{{ device.role.name|default:'' }}"
+            data-tenant="{{ device.tenant.name|default:'' }}">
+          <td>
+            <input type="checkbox" class="row-check" value="device_{{ device.pk }}">
+          </td>
+          <td>
+            <a href="/dcim/devices/{{ device.pk }}/" target="_blank">
+              <strong>{{ device.name }}</strong>
+            </a>
+          </td>
+          <td><span class="badge bg-primary">Physique</span></td>
+          <td>{{ device.site.name|default:'—' }}</td>
+          <td>{{ device.role.name|default:'—' }}</td>
+          <td>{{ device.tenant.name|default:'—' }}</td>
+          <td>
+            {% if device.ip_count %}
+              <span class="badge bg-info text-dark">{{ device.ip_count }}</span>
+            {% else %}
+              <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/dcim/devices/{{ device.pk }}/" target="_blank"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="mdi mdi-open-in-new"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+        {% for vm in vms %}
+        <tr data-site="{{ vm.site.name|default:'' }}"
+            data-role="{{ vm.role.name|default:'' }}"
+            data-tenant="{{ vm.tenant.name|default:'' }}">
+          <td>
+            <input type="checkbox" class="row-check" value="vm_{{ vm.pk }}">
+          </td>
+          <td>
+            <a href="/virtualization/virtual-machines/{{ vm.pk }}/" target="_blank">
+              <strong>{{ vm.name }}</strong>
+            </a>
+          </td>
+          <td><span class="badge bg-success">VM</span></td>
+          <td>{{ vm.site.name|default:vm.cluster.name|default:'—' }}</td>
+          <td>{{ vm.role.name|default:'—' }}</td>
+          <td>{{ vm.tenant.name|default:'—' }}</td>
+          <td>
+            {% if vm.ip_count %}
+              <span class="badge bg-info text-dark">{{ vm.ip_count }}</span>
+            {% else %}
+              <span class="text-muted">0</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/virtualization/virtual-machines/{{ vm.pk }}/" target="_blank"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="mdi mdi-open-in-new"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Options & Purge ── #}
+<div class="card cleaner-card mb-4">
+  <div class="card-body">
+    <div class="row align-items-center g-3">
+      <div class="col-auto">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="deleteInterfaces" value="1">
+          <label class="form-check-label" for="deleteInterfaces">
+            <strong>Supprimer aussi les interfaces</strong>
+            <span class="text-muted small d-block">
+              Supprime les objets Interface / VMInterface
+            </span>
+          </label>
+        </div>
+      </div>
+      <div class="col-auto ms-auto">
+        <span id="selectedCount" class="text-muted me-3">0 sélectionné(s)</span>
+        <button class="btn btn-sm btn-outline-secondary me-2" onclick="clearAllChecks()">
+          <i class="mdi mdi-checkbox-blank-outline me-1"></i>Tout désélectionner
+        </button>
+        <button id="purgeBtn" class="btn btn-danger" onclick="confirmPurge()" disabled>
+          <i class="mdi mdi-broom me-2"></i>Purger la sélection
+        </button>
+      </div>
+    </div>
+    <div class="mt-2 small text-muted">
+      <i class="mdi mdi-information-outline me-1"></i>
+      Supprime toujours : <strong>Services</strong>, <strong>Adresses IP</strong> (sur interfaces),
+      <strong>VLANs exclusifs</strong>.
+      Les VLANs partagés avec d'autres équipements sont conservés.
+    </div>
+  </div>
+</div>
+
+{# ── Résultats ── #}
+<div id="resultsSection" class="d-none">
+  <h5 class="mb-3">
+    <i class="mdi mdi-check-circle text-success me-2"></i>Résultats de la purge
+  </h5>
+  <div class="card cleaner-card mb-3">
+    <div class="card-body p-0">
+      <table class="table table-sm cleaner-table mb-0">
+        <thead>
+          <tr>
+            <th>Équipement</th><th>Type</th>
+            <th>Services</th><th>IPs</th>
+            <th>VLANs supprimés</th>
+            <th title="VLANs partagés, non supprimés">VLANs ignorés</th>
+            <th>Interfaces</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="errorsSection" class="d-none">
+    <div class="alert alert-danger">
+      <h6><i class="mdi mdi-alert-circle me-2"></i>Erreurs rencontrées</h6>
+      <ul id="errorsList" class="mb-0"></ul>
+    </div>
+  </div>
+</div>
+
+{# ── Modal de confirmation ── #}
+<div class="modal fade" id="confirmModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background:var(--cleaner-danger);color:white">
+        <h5 class="modal-title">
+          <i class="mdi mdi-alert-circle me-2"></i>Action irréversible
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Vous allez purger <strong id="confirmCount">0</strong> équipement(s).
+        </p>
+        <p>Cette action supprimera :</p>
+        <ul>
+          <li>Tous les <strong>services</strong> associés</li>
+          <li>Toutes les <strong>adresses IP</strong> sur leurs interfaces</li>
+          <li>Les <strong>VLANs exclusifs</strong> (non utilisés ailleurs)</li>
+          <li id="ifaceWarning" class="d-none" style="color:var(--cleaner-danger)">
+            <strong>Toutes les interfaces</strong> (option activée)
+          </li>
+        </ul>
+        <p class="fw-bold mb-0" style="color:var(--cleaner-danger)">
+          <i class="mdi mdi-alert me-1"></i>Cette opération ne peut pas être annulée.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-danger" onclick="executePurge()">
+          <i class="mdi mdi-broom me-1"></i>Confirmer la purge
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+const PURGE_URL = "{% url 'plugins:netbox_device_cleaner:purge' %}";
+
+// ── Filtres ─────────────────────────────────────────────
+function applyFilters() {
+  const q      = (document.getElementById('searchInput').value || '').toLowerCase();
+  const site   = (document.getElementById('filterSite').value || '').toLowerCase();
+  const role   = (document.getElementById('filterRole').value || '').toLowerCase();
+  const tenant = (document.getElementById('filterTenant').value || '').toLowerCase();
+
+  document.querySelectorAll('#deviceTable tbody tr').forEach(row => {
+    const name  = row.textContent.toLowerCase();
+    const rSite = (row.dataset.site || '').toLowerCase();
+    const rRole = (row.dataset.role || '').toLowerCase();
+    const rTen  = (row.dataset.tenant || '').toLowerCase();
+    const ok = (!q || name.includes(q))
+            && (!site   || rSite   === site)
+            && (!role   || rRole   === role)
+            && (!tenant || rTen    === tenant);
+    row.style.display = ok ? '' : 'none';
+  });
+}
+
+function resetFilters() {
+  document.getElementById('searchInput').value  = '';
+  document.getElementById('filterSite').value   = '';
+  document.getElementById('filterRole').value   = '';
+  document.getElementById('filterTenant').value = '';
+  applyFilters();
+}
+
+// ── Compteur de sélection ────────────────────────────────
+function updateCount() {
+  const n = document.querySelectorAll('input.row-check:checked').length;
+  document.getElementById('selectedCount').textContent =
+    `${n} sélectionné${n > 1 ? 's' : ''}`;
+  document.getElementById('purgeBtn').disabled = n === 0;
+}
+document.addEventListener('change', e => {
+  if (e.target.classList.contains('row-check') || e.target.id === 'checkAll') {
+    updateCount();
+  }
+});
+
+// Override updateBulkBar to also update selectedCount
+const _origUpdate = window.updateBulkBar;
+window.updateBulkBar = function() {
+  if (_origUpdate) _origUpdate();
+  updateCount();
+};
+
+// ── Confirmation ─────────────────────────────────────────
+function confirmPurge() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  document.getElementById('confirmCount').textContent = ids.length;
+  const delIfaces = document.getElementById('deleteInterfaces').checked;
+  document.getElementById('ifaceWarning').classList.toggle('d-none', !delIfaces);
+  new bootstrap.Modal(document.getElementById('confirmModal')).show();
+}
+
+// ── Exécution ────────────────────────────────────────────
+async function executePurge() {
+  const ids = getCheckedIds();
+  const delIfaces = document.getElementById('deleteInterfaces').checked ? '1' : '0';
+
+  const modal = bootstrap.Modal.getInstance(document.getElementById('confirmModal'));
+  modal?.hide();
+
+  const purgeBtn = document.getElementById('purgeBtn');
+  btnLoading(purgeBtn, true);
+
+  const body = new URLSearchParams({
+    csrfmiddlewaretoken: getCsrf(),
+    delete_interfaces: delIfaces,
+  });
+  ids.forEach(id => body.append('items[]', id));
+
+  try {
+    const r = await fetch(PURGE_URL, { method: 'POST', body });
+    const data = await r.json();
+
+    if (!data.success) {
+      showToast(data.error || 'Erreur lors de la purge.', 'danger');
+      return;
+    }
+
+    // Remplir le tableau de résultats
+    const tbody = document.getElementById('resultsBody');
+    tbody.innerHTML = '';
+    (data.results || []).forEach(res => {
+      const row = document.createElement('tr');
+      const kindLabel = res.kind === 'device' ? 'Physique' : 'VM';
+      const kindBadge = res.kind === 'device' ? 'primary' : 'success';
+      row.innerHTML = `
+        <td><strong>${res.name}</strong></td>
+        <td><span class="badge bg-${kindBadge}">${kindLabel}</span></td>
+        <td><span class="badge ${res.services > 0 ? 'bg-info text-dark' : 'bg-light text-muted'}">${res.services}</span></td>
+        <td><span class="badge ${res.ips > 0 ? 'bg-info text-dark' : 'bg-light text-muted'}">${res.ips}</span></td>
+        <td><span class="badge ${res.vlans > 0 ? 'bg-warning text-dark' : 'bg-light text-muted'}">${res.vlans}</span></td>
+        <td><span class="badge bg-secondary">${res.vlans_skipped}</span></td>
+        <td><span class="badge ${res.interfaces > 0 ? 'bg-danger' : 'bg-light text-muted'}">${res.interfaces}</span></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    // Erreurs
+    if (data.errors && data.errors.length) {
+      const errList = document.getElementById('errorsList');
+      errList.innerHTML = '';
+      data.errors.forEach(err => {
+        const li = document.createElement('li');
+        li.textContent = `${err.item || err}: ${err.error || ''}`;
+        errList.appendChild(li);
+      });
+      document.getElementById('errorsSection').classList.remove('d-none');
+    }
+
+    document.getElementById('resultsSection').classList.remove('d-none');
+    document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+    showToast(`${(data.results || []).length} équipement(s) purgé(s).`, 'success');
+    clearAllChecks();
+
+  } catch(e) {
+    showToast('Erreur réseau lors de la purge.', 'danger');
+  } finally {
+    btnLoading(purgeBtn, false);
+    updateCount();
+  }
+}
+</script>
+{% endblock %}

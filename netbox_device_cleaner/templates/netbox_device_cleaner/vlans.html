@@ -1,0 +1,297 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Santé VLANs — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-tag-multiple" style="font-size:2.2rem;opacity:.9"></i>
+    <div>
+      <h1>Santé des VLANs</h1>
+      <p>Détection et correction des doublons, VLANs inutilisés et mal configurés</p>
+    </div>
+    <div class="ms-auto">
+      <span class="badge bg-danger fs-6">{{ tab_counts.duplicates }} doublon{% if tab_counts.duplicates != 1 %}s{% endif %}</span>
+      <span class="badge bg-warning text-dark fs-6 ms-1">{{ tab_counts.unused }} inutilisé{% if tab_counts.unused != 1 %}s{% endif %}</span>
+    </div>
+  </div>
+</div>
+
+{# Tabs #}
+<ul class="nav nav-tabs cleaner-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'duplicates' %}active{% endif %}" href="?tab=duplicates">
+      Doublons {% if tab_counts.duplicates %}<span class="tab-badge bg-danger text-white">{{ tab_counts.duplicates }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'unused' %}active{% endif %}" href="?tab=unused">
+      Inutilisés {% if tab_counts.unused %}<span class="tab-badge bg-warning text-dark">{{ tab_counts.unused }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_group' %}active{% endif %}" href="?tab=no_group">
+      Sans groupe {% if tab_counts.no_group %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_group }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_site_group' %}active{% endif %}" href="?tab=no_site_group">
+      Globaux {% if tab_counts.no_site_group %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_site_group }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
+
+{# ── Tab: Doublons ── #}
+{% if tab == 'duplicates' %}
+  {% if groups %}
+    {% for group in groups %}
+    <div class="card cleaner-card mb-3">
+      <div class="card-header d-flex align-items-center" style="background:rgba(201,75,75,.08)">
+        <i class="mdi mdi-alert-circle text-danger me-2"></i>
+        <strong>VLAN ID {{ group.vid }}</strong>
+        <span class="ms-2 text-muted">— {{ group.vlans|length }} occurrence{% if group.vlans|length != 1 %}s{% endif %}</span>
+        {% if group.vlans.0.site %}<span class="badge bg-info ms-2">Site : {{ group.vlans.0.site }}</span>{% endif %}
+        {% if group.vlans.0.group %}<span class="badge bg-secondary ms-1">Groupe : {{ group.vlans.0.group }}</span>{% endif %}
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="radio" name="keep_{{ group.vid }}_{{ forloop.counter }}" form="merge-form-{{ group.vid }}-{{ forloop.counter }}" value="" disabled></th>
+              <th>Garder</th>
+              <th>ID</th>
+              <th>Nom</th>
+              <th>Statut</th>
+              <th>Site</th>
+              <th>Groupe</th>
+              <th>Tenant</th>
+              <th>Rôle</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for vlan in group.vlans %}
+            <tr id="vlan-row-{{ vlan.pk }}">
+              <td>
+                <input type="radio" name="keep_{{ group.vid }}_{{ forloop.parentloop.counter }}"
+                       form="merge-form-{{ group.vid }}-{{ forloop.parentloop.counter }}"
+                       value="{{ vlan.pk }}" class="keep-radio">
+              </td>
+              <td><span class="badge bg-light text-dark">à définir</span></td>
+              <td><strong>{{ vlan.vid }}</strong></td>
+              <td>{{ vlan.name }}</td>
+              <td>
+                <span class="badge bg-{% if vlan.status == 'active' %}success{% elif vlan.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                  {{ vlan.get_status_display }}
+                </span>
+              </td>
+              <td>{{ vlan.site|default:'—' }}</td>
+              <td>{{ vlan.group|default:'—' }}</td>
+              <td>{{ vlan.tenant|default:'—' }}</td>
+              <td>{{ vlan.role|default:'—' }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteVlan({{ vlan.pk }}, 'vlan-row-{{ vlan.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/vlans/{{ vlan.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex gap-2 align-items-center">
+        <small class="text-muted me-2">Sélectionner le VLAN à conserver, puis :</small>
+        <button class="btn btn-sm btn-danger"
+                onclick="mergeVlans('{{ group.vid }}', {{ forloop.counter }})">
+          <i class="mdi mdi-merge me-1"></i>Fusionner (supprimer les autres)
+        </button>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun doublon de VLAN détecté. Votre IPAM est sain pour ce critère.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Tab: Inutilisés, Sans groupe, Globaux ── #}
+{% if tab == 'unused' or tab == 'no_group' or tab == 'no_site_group' %}
+  {% if vlans %}
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="input-group" style="max-width:320px">
+        <span class="input-group-text"><i class="mdi mdi-magnify"></i></span>
+        <input type="text" id="vlanSearch" class="form-control form-control-sm"
+               placeholder="Filtrer par nom / VID…"
+               oninput="filterTable('vlanSearch','vlanTable')">
+      </div>
+      <div class="d-flex gap-2">
+        {% if tab == 'unused' %}
+        <button class="btn btn-sm btn-danger"
+                onclick="confirmDeleteAllUnused()">
+          <i class="mdi mdi-delete-sweep me-1"></i>Supprimer tous les VLANs inutilisés
+        </button>
+        {% endif %}
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="document.getElementById('checkAll').click()">
+          <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+        </button>
+      </div>
+    </div>
+
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0" id="vlanTable">
+          <thead>
+            <tr>
+              <th class="check-col">
+                <input type="checkbox" id="checkAll">
+              </th>
+              <th>VID</th>
+              <th>Nom</th>
+              <th>Statut</th>
+              <th>Site</th>
+              <th>Groupe</th>
+              <th>Tenant</th>
+              <th>Rôle</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for vlan in vlans %}
+            <tr id="vlan-row-{{ vlan.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ vlan.pk }}"></td>
+              <td><strong>{{ vlan.vid }}</strong></td>
+              <td>{{ vlan.name }}</td>
+              <td>
+                <span class="badge bg-{% if vlan.status == 'active' %}success{% elif vlan.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                  {{ vlan.get_status_display }}
+                </span>
+              </td>
+              <td>{{ vlan.site|default:'—' }}</td>
+              <td>{{ vlan.group|default:'—' }}</td>
+              <td>{{ vlan.tenant|default:'—' }}</td>
+              <td>{{ vlan.role|default:'—' }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteVlan({{ vlan.pk }}, 'vlan-row-{{ vlan.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/vlans/{{ vlan.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun VLAN trouvé pour ce critère.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# Bulk action bar content #}
+{% block bulk_actions %}
+<button class="btn btn-sm btn-danger" onclick="bulkDeleteVlans()">
+  <i class="mdi mdi-delete-sweep me-1"></i>Supprimer la sélection
+</button>
+{% endblock %}
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+const VLANS_URL = "{% url 'plugins:netbox_device_cleaner:vlans' %}";
+
+async function deleteVlan(pk, rowId) {
+  if (!confirm(`Supprimer ce VLAN ?`)) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(VLANS_URL, 'delete_vlan', { vlan_id: pk });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function bulkDeleteVlans() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} VLAN(s) sélectionné(s) ?`)) return;
+  try {
+    const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_vlans_bulk' });
+    ids.forEach(id => body.append('vlan_ids[]', id));
+    const r = await fetch(VLANS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      ids.forEach(id => document.getElementById(`vlan-row-${id}`)?.remove());
+      showToast(data.message, 'success');
+      clearAllChecks();
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+}
+
+async function confirmDeleteAllUnused() {
+  const count = {{ tab_counts.unused|default:0 }};
+  if (!confirm(`Supprimer TOUS les ${count} VLANs inutilisés ? Cette action est irréversible.`)) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(VLANS_URL, 'delete_unused_bulk');
+    if (r.success) {
+      showToast(r.message, 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function mergeVlans(vid, idx) {
+  const radios = document.querySelectorAll(`input[name="keep_${vid}_${idx}"]`);
+  const keepRadio = Array.from(radios).find(r => r.checked);
+  if (!keepRadio) { showToast("Sélectionnez le VLAN à conserver.", 'warning'); return; }
+  const keepId = keepRadio.value;
+  const deleteIds = Array.from(radios).filter(r => !r.checked).map(r => r.value);
+  if (!deleteIds.length) { showToast("Rien à fusionner.", 'warning'); return; }
+
+  if (!confirm(`Fusionner : conserver VLAN ${keepId}, supprimer ${deleteIds.length} autre(s) ?`)) return;
+
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'merge_vlan', keep_id: keepId });
+    deleteIds.forEach(id => body.append('delete_ids[]', id));
+    const r = await fetch(VLANS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+</script>
+{% endblock %}
