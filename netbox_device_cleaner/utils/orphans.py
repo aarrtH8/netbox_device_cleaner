@@ -5,29 +5,23 @@ from django.db.models import Count, Q
 def get_orphan_services():
     """
     Services dont le parent (Device ou VM) n'existe plus.
-    Utilise des sous-requêtes anti-join pour les deux types de parents.
+    Utilise des sous-requêtes anti-join sur les FK directes device/virtual_machine.
     """
     from ipam.models import Service
     from dcim.models import Device
     from virtualization.models import VirtualMachine
-    from django.contrib.contenttypes.models import ContentType
 
-    device_ct = ContentType.objects.get_for_model(Device)
-    vm_ct = ContentType.objects.get_for_model(VirtualMachine)
-
-    device_ids = Device.objects.values('pk')
-    vm_ids = VirtualMachine.objects.values('pk')
+    device_ids = Device.objects.values_list('pk', flat=True)
+    vm_ids = VirtualMachine.objects.values_list('pk', flat=True)
 
     return (
         Service.objects
         .filter(
-            Q(parent_object_type=device_ct, parent_object_id__isnull=False) &
-            ~Q(parent_object_id__in=device_ids)
+            Q(device__isnull=False) & ~Q(device_id__in=device_ids)
             |
-            Q(parent_object_type=vm_ct, parent_object_id__isnull=False) &
-            ~Q(parent_object_id__in=vm_ids)
+            Q(virtual_machine__isnull=False) & ~Q(virtual_machine_id__in=vm_ids)
         )
-        .select_related('parent_object_type')
+        .select_related('device', 'virtual_machine')
         .order_by('name')
     )
 

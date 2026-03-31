@@ -84,9 +84,9 @@
                 {% else %}—{% endif %}
               </td>
               <td>
-                <span class="badge bg-secondary">{{ svc.parent_object_type }}</span>
+                <span class="badge bg-secondary">{% if svc.device %}Device{% elif svc.virtual_machine %}VM{% else %}—{% endif %}</span>
               </td>
-              <td class="text-muted">{{ svc.parent_object_id }}</td>
+              <td class="text-muted">{{ svc.device|default:svc.virtual_machine|default:"—" }}</td>
               <td>
                 <button class="btn btn-sm btn-outline-danger"
                         onclick="deleteService({{ svc.pk }}, 'svc-row-{{ svc.pk }}')">
