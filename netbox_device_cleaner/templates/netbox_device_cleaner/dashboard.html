@@ -1,0 +1,100 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}IPAM Health Suite — Vue d'ensemble{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+{# ── Hero ── #}
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-heart-pulse" style="font-size:2.5rem;opacity:.9"></i>
+    <div>
+      <h1><i class="mdi mdi-shield-check me-2"></i>IPAM Health Suite</h1>
+      <p>Vue d'ensemble de la santé de votre IPAM NetBox</p>
+    </div>
+    <div class="ms-auto text-center">
+      {% if total_issues == 0 %}
+        <span class="badge bg-success fs-6"><i class="mdi mdi-check-circle me-1"></i>Tout est sain</span>
+      {% else %}
+        <span class="badge bg-danger fs-6">
+          <i class="mdi mdi-alert-circle me-1"></i>{{ total_issues }} problème{% if total_issues > 1 %}s{% endif %} détecté{% if total_issues > 1 %}s{% endif %}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── Section VLANs ── #}
+<h6 class="text-uppercase text-muted small fw-bold mb-2 mt-3">
+  <i class="mdi mdi-tag-multiple me-1"></i>VLANs
+</h6>
+<div class="row g-3 mb-3">
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=vlan_url tab='duplicates' icon='content-duplicate' label='VLANs en double' count=counts.vlans_dup %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=vlan_url tab='unused' icon='tag-off' label='VLANs inutilisés' count=counts.vlans_unused %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=vlan_url tab='no_group' icon='folder-remove' label='Sans groupe' count=counts.vlans_no_group severity='info' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=vlan_url tab='no_site_group' icon='earth-off' label='VLANs globaux' count=counts.vlans_global severity='info' %}
+</div>
+
+{# ── Section IPs ── #}
+<h6 class="text-uppercase text-muted small fw-bold mb-2">
+  <i class="mdi mdi-ip-network me-1"></i>Adresses IP
+</h6>
+<div class="row g-3 mb-3">
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=ip_url tab='duplicates' icon='content-duplicate' label='IPs en double' count=counts.ips_dup %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=ip_url tab='orphans' icon='link-off' label='IPs orphelines' count=counts.ips_orphan %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=ip_url tab='outside_prefix' icon='map-marker-off' label='Hors préfixe' count=counts.ips_outside_prefix severity='warning' %}
+</div>
+
+{# ── Section Préfixes ── #}
+<h6 class="text-uppercase text-muted small fw-bold mb-2">
+  <i class="mdi mdi-sitemap me-1"></i>Préfixes
+</h6>
+<div class="row g-3 mb-3">
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=prefix_url tab='overlapping' icon='layers-triple' label='Chevauchements' count=counts.prefixes_overlap %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=prefix_url tab='unused' icon='archive-off' label='Préfixes vides' count=counts.prefixes_unused severity='warning' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=prefix_url tab='no_vrf' icon='vpn' label='Sans VRF' count=counts.prefixes_no_vrf severity='info' %}
+</div>
+
+{# ── Section Équipements ── #}
+<h6 class="text-uppercase text-muted small fw-bold mb-2">
+  <i class="mdi mdi-server me-1"></i>Équipements
+</h6>
+<div class="row g-3 mb-3">
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=device_url tab='no_primary_ip' icon='ip-network-outline' label='Sans IP principale' count=counts.devices_no_ip severity='warning' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=device_url tab='no_site' icon='map-marker-off' label='Sans site' count=counts.devices_no_site severity='warning' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=device_url tab='no_role' icon='account-question' label='Sans rôle' count=counts.devices_no_role severity='info' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=device_url tab='dup_macs' icon='ethernet' label='MACs en double' count=counts.macs_dup %}
+</div>
+
+{# ── Section Orphelins ── #}
+<h6 class="text-uppercase text-muted small fw-bold mb-2">
+  <i class="mdi mdi-ghost me-1"></i>Objets Orphelins
+</h6>
+<div class="row g-3 mb-4">
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=orphan_url tab='services' icon='room-service' label='Services orphelins' count=counts.services_orphan %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=orphan_url tab='vrfs_empty' icon='table-remove' label='VRFs vides' count=counts.vrfs_empty severity='info' %}
+  {% include 'netbox_device_cleaner/_metric_card.html' with url=orphan_url tab='vrfs_no_rt' icon='route' label='VRFs sans RT' count=counts.vrfs_no_rt severity='info' %}
+</div>
+
+{# ── Actions rapides ── #}
+<div class="card cleaner-card">
+  <div class="card-body">
+    <h6 class="card-title"><i class="mdi mdi-lightning-bolt me-1 text-warning"></i>Actions rapides</h6>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{% url 'plugins:netbox_device_cleaner:vlans' %}?tab=duplicates" class="btn btn-sm btn-outline-danger">
+        <i class="mdi mdi-tag-multiple me-1"></i>Corriger doublons VLANs
+      </a>
+      <a href="{% url 'plugins:netbox_device_cleaner:ips' %}?tab=orphans" class="btn btn-sm btn-outline-warning">
+        <i class="mdi mdi-link-off me-1"></i>Nettoyer IPs orphelines
+      </a>
+      <a href="{% url 'plugins:netbox_device_cleaner:orphans' %}?tab=services" class="btn btn-sm btn-outline-secondary">
+        <i class="mdi mdi-ghost me-1"></i>Services orphelins
+      </a>
+      <a href="{% url 'plugins:netbox_device_cleaner:purge' %}" class="btn btn-sm btn-outline-danger">
+        <i class="mdi mdi-broom me-1"></i>Purge équipements
+      </a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,327 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Santé Préfixes — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-sitemap" style="font-size:2.2rem;opacity:.9"></i>
+    <div>
+      <h1>Santé des Préfixes</h1>
+      <p>Chevauchements de préfixes, préfixes vides et préfixes sans VRF</p>
+    </div>
+    <div class="ms-auto">
+      <span class="badge bg-danger fs-6">{{ tab_counts.overlapping }} chevauchement{% if tab_counts.overlapping != 1 %}s{% endif %}</span>
+      <span class="badge bg-warning text-dark fs-6 ms-1">{{ tab_counts.unused }} vide{% if tab_counts.unused != 1 %}s{% endif %}</span>
+    </div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs cleaner-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'overlapping' %}active{% endif %}" href="?tab=overlapping">
+      Chevauchements
+      {% if tab_counts.overlapping %}<span class="tab-badge bg-danger text-white">{{ tab_counts.overlapping }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'unused' %}active{% endif %}" href="?tab=unused">
+      Préfixes vides
+      {% if tab_counts.unused %}<span class="tab-badge bg-warning text-dark">{{ tab_counts.unused }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_vrf' %}active{% endif %}" href="?tab=no_vrf">
+      Sans VRF
+      {% if tab_counts.no_vrf %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_vrf }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
+
+{% if lookup_error %}
+<div class="alert alert-warning">
+  <i class="mdi mdi-alert me-2"></i>
+  <strong>Lookups réseau non disponibles.</strong>
+  Cette fonctionnalité nécessite PostgreSQL avec le support netaddr de NetBox.
+  Vérifiez que votre base de données PostgreSQL est correctement configurée.
+</div>
+{% endif %}
+
+{# ── Onglet : Chevauchements ── #}
+{% if tab == 'overlapping' %}
+  {% if prefixes and not lookup_error %}
+    <div class="alert alert-danger mb-3">
+      <i class="mdi mdi-alert-circle me-2"></i>
+      <strong>{{ prefixes|length }} préfixe{% if prefixes|length != 1 %}s{% endif %} se chevauchent</strong>
+      dans le même VRF — risque d'incohérence de routage.
+    </div>
+    <div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('checkAll').click()">
+        <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+      </button>
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Préfixe</th><th>VRF</th><th>Site</th><th>Tenant</th>
+              <th>Rôle</th><th>VLAN</th><th>Statut</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in prefixes %}
+            <tr id="prefix-row-{{ p.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ p.pk }}"></td>
+              <td><strong><code>{{ p.prefix }}</code></strong></td>
+              <td>{{ p.vrf|default:'Globale' }}</td>
+              <td>{{ p.site|default:'—' }}</td>
+              <td>{{ p.tenant|default:'—' }}</td>
+              <td>{{ p.role|default:'—' }}</td>
+              <td>{{ p.vlan|default:'—' }}</td>
+              <td>
+                <span class="badge bg-{% if p.status == 'active' %}success{% elif p.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                  {{ p.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deletePrefix({{ p.pk }}, 'prefix-row-{{ p.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/prefixes/{{ p.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% elif not lookup_error %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun chevauchement de préfixes détecté.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : Préfixes vides ── #}
+{% if tab == 'unused' %}
+  {% if page_obj and not lookup_error %}
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="text-muted small">
+        {{ page_obj.paginator.count }} préfixe{% if page_obj.paginator.count != 1 %}s{% endif %} vide{% if page_obj.paginator.count != 1 %}s{% endif %}
+      </span>
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('checkAll').click()">
+        <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+      </button>
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Préfixe</th><th>VRF</th><th>Site</th><th>Tenant</th>
+              <th>Rôle</th><th>Statut</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in page_obj %}
+            <tr id="prefix-row-{{ p.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ p.pk }}"></td>
+              <td><strong><code>{{ p.prefix }}</code></strong></td>
+              <td>{{ p.vrf|default:'Globale' }}</td>
+              <td>{{ p.site|default:'—' }}</td>
+              <td>{{ p.tenant|default:'—' }}</td>
+              <td>{{ p.role|default:'—' }}</td>
+              <td>
+                <span class="badge bg-{% if p.status == 'active' %}success{% else %}secondary{% endif %}">
+                  {{ p.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deletePrefix({{ p.pk }}, 'prefix-row-{{ p.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/prefixes/{{ p.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if page_obj.has_other_pages %}
+    <nav class="mt-3">
+      <ul class="pagination pagination-sm justify-content-center">
+        {% if page_obj.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?tab=unused&page={{ page_obj.previous_page_number }}">‹</a>
+          </li>
+        {% endif %}
+        <li class="page-item disabled">
+          <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?tab=unused&page={{ page_obj.next_page_number }}">›</a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+  {% elif not lookup_error %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun préfixe vide détecté.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : Sans VRF ── #}
+{% if tab == 'no_vrf' %}
+  {% if prefixes %}
+    <div class="alert alert-info mb-3">
+      <i class="mdi mdi-information me-2"></i>
+      Ces préfixes sont dans la table de routage <strong>globale</strong> alors que des VRFs sont définies.
+      Vous pouvez leur assigner un VRF directement depuis cette vue.
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Préfixe</th><th>Site</th><th>Tenant</th><th>Rôle</th>
+              <th>Statut</th><th>Assigner VRF</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in prefixes %}
+            <tr id="prefix-row-{{ p.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ p.pk }}"></td>
+              <td><strong><code>{{ p.prefix }}</code></strong></td>
+              <td>{{ p.site|default:'—' }}</td>
+              <td>{{ p.tenant|default:'—' }}</td>
+              <td>{{ p.role|default:'—' }}</td>
+              <td>
+                <span class="badge bg-{% if p.status == 'active' %}success{% else %}secondary{% endif %}">
+                  {{ p.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <div class="input-group input-group-sm" style="min-width:200px">
+                  <select class="form-select form-select-sm" id="vrf-select-{{ p.pk }}">
+                    <option value="">— Choisir VRF —</option>
+                    {% for vrf in vrfs %}
+                    <option value="{{ vrf.pk }}">{{ vrf.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn-sm btn-outline-primary"
+                          onclick="assignVrf({{ p.pk }}, 'prefix-row-{{ p.pk }}')">
+                    <i class="mdi mdi-check"></i>
+                  </button>
+                </div>
+              </td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deletePrefix({{ p.pk }}, 'prefix-row-{{ p.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/prefixes/{{ p.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Tous les préfixes ont un VRF assigné (ou aucun VRF n'est défini).
+    </div>
+  {% endif %}
+{% endif %}
+
+{% block bulk_actions %}
+<button class="btn btn-sm btn-danger" onclick="bulkDeletePrefixes()">
+  <i class="mdi mdi-delete-sweep me-1"></i>Supprimer la sélection
+</button>
+{% endblock %}
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+const PREFIXES_URL = "{% url 'plugins:netbox_device_cleaner:prefixes' %}";
+
+async function deletePrefix(pk, rowId) {
+  if (!confirm('Supprimer ce préfixe ?')) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(PREFIXES_URL, 'delete_prefix', { prefix_id: pk });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function bulkDeletePrefixes() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} préfixe(s) ? Action irréversible.`)) return;
+  const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_prefixes_bulk' });
+  ids.forEach(id => body.append('prefix_ids[]', id));
+  try {
+    const r = await fetch(PREFIXES_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      ids.forEach(id => document.getElementById(`prefix-row-${id}`)?.remove());
+      showToast(data.message, 'success');
+      clearAllChecks();
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+}
+
+async function assignVrf(prefixId, rowId) {
+  const sel = document.getElementById(`vrf-select-${prefixId}`);
+  const vrfId = sel?.value;
+  if (!vrfId) { showToast('Sélectionnez un VRF.', 'warning'); return; }
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(PREFIXES_URL, 'assign_vrf', {
+      prefix_id: prefixId, vrf_id: vrfId
+    });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+</script>
+{% endblock %}

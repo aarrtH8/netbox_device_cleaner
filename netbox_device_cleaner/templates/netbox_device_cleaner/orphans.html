@@ -1,0 +1,353 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Objets Orphelins — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+{% csrf_token %}
+
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-ghost" style="font-size:2.2rem;opacity:.9"></i>
+    <div>
+      <h1>Objets Orphelins</h1>
+      <p>Services sans parent, VRFs vides, VRFs sans route targets, agrégats sans préfixe</p>
+    </div>
+    <div class="ms-auto">
+      {% if tab_counts.services %}
+        <span class="badge bg-danger fs-6">
+          {{ tab_counts.services }} service{% if tab_counts.services != 1 %}s{% endif %} orphelin{% if tab_counts.services != 1 %}s{% endif %}
+        </span>
+      {% else %}
+        <span class="badge bg-success fs-6"><i class="mdi mdi-check-circle me-1"></i>Aucun service orphelin</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs cleaner-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'services' %}active{% endif %}" href="?tab=services">
+      Services orphelins
+      {% if tab_counts.services %}<span class="tab-badge bg-danger text-white">{{ tab_counts.services }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'vrfs_empty' %}active{% endif %}" href="?tab=vrfs_empty">
+      VRFs vides
+      {% if tab_counts.vrfs_empty %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.vrfs_empty }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'vrfs_no_rt' %}active{% endif %}" href="?tab=vrfs_no_rt">
+      VRFs sans RT
+      {% if tab_counts.vrfs_no_rt %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.vrfs_no_rt }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'aggregates' %}active{% endif %}" href="?tab=aggregates">
+      Agrégats sans préfixe
+      {% if tab_counts.aggregates %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.aggregates }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
+
+{# ── Onglet : Services orphelins ── #}
+{% if tab == 'services' %}
+  {% if services %}
+    <div class="d-flex justify-content-end mb-2 gap-2">
+      <button class="btn btn-sm btn-danger" onclick="deleteAllOrphanServices()">
+        <i class="mdi mdi-delete-sweep me-1"></i>Supprimer tous les services orphelins
+      </button>
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('checkAll').click()">
+        <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+      </button>
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0" id="svcTable">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Nom</th><th>Protocole</th><th>Ports</th>
+              <th>Type parent attendu</th><th>ID parent</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for svc in services %}
+            <tr id="svc-row-{{ svc.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ svc.pk }}"></td>
+              <td><strong>{{ svc.name }}</strong></td>
+              <td>{{ svc.get_protocol_display|default:'—' }}</td>
+              <td>
+                {% if svc.ports %}
+                  {{ svc.ports|join:", " }}
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <span class="badge bg-secondary">{{ svc.parent_object_type }}</span>
+              </td>
+              <td class="text-muted">{{ svc.parent_object_id }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteService({{ svc.pk }}, 'svc-row-{{ svc.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun service orphelin détecté.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : VRFs vides ── #}
+{% if tab == 'vrfs_empty' %}
+  {% if vrfs %}
+    <div class="d-flex justify-content-end mb-2">
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="document.getElementById('checkAll').click()">
+        <i class="mdi mdi-checkbox-multiple-marked me-1"></i>Tout sélectionner
+      </button>
+    </div>
+    <div class="alert alert-info mb-3">
+      <i class="mdi mdi-information me-2"></i>
+      Ces VRFs ne contiennent aucun préfixe ni adresse IP. La suppression est sécurisée.
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>Nom VRF</th><th>Route Distinguisher</th><th>Tenant</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for vrf in vrfs %}
+            <tr id="vrf-row-{{ vrf.pk }}">
+              <td><input type="checkbox" class="row-check" value="{{ vrf.pk }}"></td>
+              <td><strong>{{ vrf.name }}</strong></td>
+              <td><code>{{ vrf.rd|default:'—' }}</code></td>
+              <td>{{ vrf.tenant|default:'—' }}</td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger"
+                        onclick="deleteVrf({{ vrf.pk }}, 'vrf-row-{{ vrf.pk }}')">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+                <a href="/ipam/vrfs/{{ vrf.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun VRF vide.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : VRFs sans RT ── #}
+{% if tab == 'vrfs_no_rt' %}
+  {% if vrfs %}
+    <div class="alert alert-info mb-3">
+      <i class="mdi mdi-information me-2"></i>
+      Ces VRFs n'ont ni route target d'import ni d'export. Vue informative — cela peut être intentionnel.
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr><th>Nom VRF</th><th>RD</th><th>Tenant</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for vrf in vrfs %}
+            <tr>
+              <td><strong>{{ vrf.name }}</strong></td>
+              <td><code>{{ vrf.rd|default:'—' }}</code></td>
+              <td>{{ vrf.tenant|default:'—' }}</td>
+              <td>
+                <a href="/ipam/vrfs/{{ vrf.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new me-1"></i>Voir
+                </a>
+                <a href="/ipam/vrfs/{{ vrf.pk }}/edit/" target="_blank"
+                   class="btn btn-sm btn-outline-primary">
+                  <i class="mdi mdi-pencil me-1"></i>Modifier
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Tous les VRFs ont des route targets configurés.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : Agrégats sans préfixe ── #}
+{% if tab == 'aggregates' %}
+  {% if aggregates %}
+    <div class="alert alert-info mb-3">
+      <i class="mdi mdi-information me-2"></i>
+      Ces agrégats (blocs RIR) n'ont aucun préfixe enfant. Vue informative.
+    </div>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr><th>Préfixe</th><th>RIR</th><th>Tenant</th><th>Date acquisition</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for agg in aggregates %}
+            <tr>
+              <td><strong><code>{{ agg.prefix }}</code></strong></td>
+              <td>{{ agg.rir }}</td>
+              <td>{{ agg.tenant|default:'—' }}</td>
+              <td>{{ agg.date_added|date:"d/m/Y"|default:'—' }}</td>
+              <td>
+                <a href="/ipam/aggregates/{{ agg.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Tous les agrégats ont des préfixes enfants.
+    </div>
+  {% endif %}
+{% endif %}
+
+{% block bulk_actions %}
+{% if tab == 'services' %}
+<button class="btn btn-sm btn-danger" onclick="bulkDeleteServices()">
+  <i class="mdi mdi-delete-sweep me-1"></i>Supprimer la sélection
+</button>
+{% endif %}
+{% if tab == 'vrfs_empty' %}
+<button class="btn btn-sm btn-danger" onclick="bulkDeleteVrfs()">
+  <i class="mdi mdi-delete-sweep me-1"></i>Supprimer les VRFs vides sélectionnés
+</button>
+{% endif %}
+{% endblock %}
+
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+<script>
+const ORPHANS_URL = "{% url 'plugins:netbox_device_cleaner:orphans' %}";
+
+async function deleteService(pk, rowId) {
+  if (!confirm('Supprimer ce service orphelin ?')) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(ORPHANS_URL, 'delete_service', { service_id: pk });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function bulkDeleteServices() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} service(s) orphelin(s) ?`)) return;
+  const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_services_bulk' });
+  ids.forEach(id => body.append('service_ids[]', id));
+  try {
+    const r = await fetch(ORPHANS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      ids.forEach(id => document.getElementById(`svc-row-${id}`)?.remove());
+      showToast(data.message, 'success');
+      clearAllChecks();
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+}
+
+async function deleteAllOrphanServices() {
+  const count = {{ tab_counts.services|default:0 }};
+  if (!confirm(`Supprimer TOUS les ${count} services orphelins ? Action irréversible.`)) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    // Sélectionner toutes les checkboxes puis envoyer
+    const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_services_bulk' });
+    document.querySelectorAll('input.row-check').forEach(c => body.append('service_ids[]', c.value));
+    const r = await fetch(ORPHANS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      showToast(data.message, 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function deleteVrf(pk, rowId) {
+  if (!confirm('Supprimer ce VRF vide ?')) return;
+  const btn = event.target.closest('button');
+  btnLoading(btn, true);
+  try {
+    const r = await cleanerPost(ORPHANS_URL, 'delete_vrf', { vrf_id: pk });
+    if (r.success) {
+      document.getElementById(rowId)?.remove();
+      showToast(r.message, 'success');
+    } else {
+      showToast(r.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally { btnLoading(btn, false); }
+}
+
+async function bulkDeleteVrfs() {
+  const ids = getCheckedIds();
+  if (!ids.length) return;
+  if (!confirm(`Supprimer ${ids.length} VRF(s) vide(s) ?`)) return;
+  const body = new URLSearchParams({ csrfmiddlewaretoken: getCsrf(), action: 'delete_vrfs_bulk' });
+  ids.forEach(id => body.append('vrf_ids[]', id));
+  try {
+    const r = await fetch(ORPHANS_URL, { method: 'POST', body });
+    const data = await r.json();
+    if (data.success) {
+      ids.forEach(id => document.getElementById(`vrf-row-${id}`)?.remove());
+      showToast(data.message, 'success');
+      clearAllChecks();
+    } else {
+      showToast(data.error, 'danger');
+    }
+  } catch(e) { showToast('Erreur réseau', 'danger'); }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,297 @@
+{% extends 'netbox_device_cleaner/base_cleaner.html' %}
+{% block cleaner_title %}Santé Équipements — IPAM Health Suite{% endblock %}
+
+{% block cleaner_content %}
+
+<div class="cleaner-hero">
+  <div class="d-flex align-items-center gap-3">
+    <i class="mdi mdi-server" style="font-size:2.2rem;opacity:.9"></i>
+    <div>
+      <h1>Santé des Équipements</h1>
+      <p>Données manquantes, adresses MAC en double et interfaces sans IP</p>
+    </div>
+    <div class="ms-auto">
+      {% if tab_counts.no_primary_ip %}
+        <span class="badge bg-warning text-dark fs-6">
+          {{ tab_counts.no_primary_ip }} sans IP principale
+        </span>
+      {% else %}
+        <span class="badge bg-success fs-6"><i class="mdi mdi-check-circle me-1"></i>IP principales OK</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<ul class="nav nav-tabs cleaner-tabs mb-3 flex-wrap">
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_primary_ip' %}active{% endif %}" href="?tab=no_primary_ip">
+      Sans IP principale
+      {% if tab_counts.no_primary_ip %}<span class="tab-badge bg-warning text-dark">{{ tab_counts.no_primary_ip }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_site' %}active{% endif %}" href="?tab=no_site">
+      Sans site
+      {% if tab_counts.no_site %}<span class="tab-badge bg-warning text-dark">{{ tab_counts.no_site }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_role' %}active{% endif %}" href="?tab=no_role">
+      Sans rôle
+      {% if tab_counts.no_role %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_role }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_device_type' %}active{% endif %}" href="?tab=no_device_type">
+      Sans type
+      {% if tab_counts.no_device_type %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_device_type }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'no_cluster' %}active{% endif %}" href="?tab=no_cluster">
+      VMs sans cluster
+      {% if tab_counts.no_cluster %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.no_cluster }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'dup_macs' %}active{% endif %}" href="?tab=dup_macs">
+      MACs en double
+      {% if tab_counts.dup_macs %}<span class="tab-badge bg-danger text-white">{{ tab_counts.dup_macs }}</span>{% endif %}
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if tab == 'iface_no_ip' %}active{% endif %}" href="?tab=iface_no_ip">
+      Interfaces sans IP
+      {% if tab_counts.iface_no_ip %}<span class="tab-badge bg-secondary text-white">{{ tab_counts.iface_no_ip }}</span>{% endif %}
+    </a>
+  </li>
+</ul>
+
+{# ── Onglets devices (no_primary_ip, no_site, no_role, no_device_type) ── #}
+{% if tab == 'no_primary_ip' or tab == 'no_site' or tab == 'no_role' or tab == 'no_device_type' %}
+  {% if devices %}
+    <div class="mb-2">
+      <div class="input-group" style="max-width:320px">
+        <span class="input-group-text"><i class="mdi mdi-magnify"></i></span>
+        <input type="text" id="devSearch" class="form-control form-control-sm"
+               placeholder="Filtrer par nom…"
+               oninput="filterTable('devSearch','devTable')">
+      </div>
+    </div>
+    <p class="text-muted small">
+      <i class="mdi mdi-information-outline me-1"></i>
+      Vue lecture seule — cliquez sur "Modifier" pour corriger dans NetBox.
+    </p>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0" id="devTable">
+          <thead>
+            <tr>
+              <th>Équipement</th><th>Type</th><th>Site</th>
+              <th>Rôle</th><th>Tenant</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in devices %}
+            <tr>
+              <td>
+                <a href="/dcim/devices/{{ d.pk }}/" target="_blank">
+                  <strong>{{ d.name }}</strong>
+                </a>
+              </td>
+              <td>{{ d.device_type|default:'<span class="badge bg-warning text-dark">Manquant</span>'|safe }}</td>
+              <td>
+                {% if d.site %}{{ d.site }}
+                {% else %}<span class="badge bg-warning text-dark">Manquant</span>{% endif %}
+              </td>
+              <td>
+                {% if d.role %}{{ d.role }}
+                {% else %}<span class="badge bg-secondary">Manquant</span>{% endif %}
+              </td>
+              <td>{{ d.tenant|default:'—' }}</td>
+              <td>
+                <a href="/dcim/devices/{{ d.pk }}/edit/" target="_blank"
+                   class="btn btn-sm btn-outline-primary">
+                  <i class="mdi mdi-pencil me-1"></i>Modifier
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun équipement avec ce problème.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : VMs sans cluster ── #}
+{% if tab == 'no_cluster' %}
+  {% if vms %}
+    <p class="text-muted small">
+      <i class="mdi mdi-information-outline me-1"></i>Vue lecture seule — cliquez sur "Modifier" pour corriger.
+    </p>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr><th>Nom VM</th><th>Site</th><th>Rôle</th><th>Tenant</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for vm in vms %}
+            <tr>
+              <td>
+                <a href="/virtualization/virtual-machines/{{ vm.pk }}/" target="_blank">
+                  <strong>{{ vm.name }}</strong>
+                </a>
+              </td>
+              <td>{{ vm.site|default:'—' }}</td>
+              <td>{{ vm.role|default:'—' }}</td>
+              <td>{{ vm.tenant|default:'—' }}</td>
+              <td>
+                <a href="/virtualization/virtual-machines/{{ vm.pk }}/edit/" target="_blank"
+                   class="btn btn-sm btn-outline-primary">
+                  <i class="mdi mdi-pencil me-1"></i>Modifier
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Toutes les VMs ont un cluster assigné.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : MACs en double ── #}
+{% if tab == 'dup_macs' %}
+  {% if mac_groups %}
+    {% for mg in mac_groups %}
+    <div class="card cleaner-card mb-3">
+      <div class="card-header d-flex align-items-center" style="background:rgba(201,75,75,.08)">
+        <i class="mdi mdi-ethernet text-danger me-2"></i>
+        <strong>MAC : <code>{{ mg.mac }}</code></strong>
+        <span class="ms-2 text-muted">
+          — {{ mg.physical|length }} interface{% if mg.physical|length != 1 %}s{% endif %} physique{% if mg.physical|length != 1 %}s{% endif %}
+          {% if mg.virtual %}
+            + {{ mg.virtual|length }} VM{% if mg.virtual|length != 1 %}s{% endif %}
+          {% endif %}
+        </span>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr><th>Interface</th><th>Équipement</th><th>Type</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for iface in mg.physical %}
+            <tr>
+              <td>{{ iface.name }}</td>
+              <td>
+                <a href="/dcim/devices/{{ iface.device.pk }}/" target="_blank">
+                  {{ iface.device }}
+                </a>
+              </td>
+              <td><span class="badge bg-primary">Physique</span></td>
+              <td>
+                <a href="/dcim/interfaces/{{ iface.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new me-1"></i>Voir
+                </a>
+                <a href="/dcim/interfaces/{{ iface.pk }}/edit/" target="_blank"
+                   class="btn btn-sm btn-outline-primary">
+                  <i class="mdi mdi-pencil me-1"></i>Modifier
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+            {% for iface in mg.virtual %}
+            <tr>
+              <td>{{ iface.name }}</td>
+              <td>
+                <a href="/virtualization/virtual-machines/{{ iface.virtual_machine.pk }}/" target="_blank">
+                  {{ iface.virtual_machine }}
+                </a>
+              </td>
+              <td><span class="badge bg-info text-dark">VM</span></td>
+              <td>
+                <a href="/virtualization/interfaces/{{ iface.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new me-1"></i>Voir
+                </a>
+                <a href="/virtualization/interfaces/{{ iface.pk }}/edit/" target="_blank"
+                   class="btn btn-sm btn-outline-primary">
+                  <i class="mdi mdi-pencil me-1"></i>Modifier
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Aucun doublon d'adresse MAC détecté.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Onglet : Interfaces sans IP ── #}
+{% if tab == 'iface_no_ip' %}
+  {% if truncated %}
+  <div class="alert alert-warning">
+    <i class="mdi mdi-alert me-2"></i>
+    <strong>Résultats tronqués</strong> : {{ total }} interfaces sans IP détectées, affichage limité à 500.
+  </div>
+  {% endif %}
+  {% if ifaces %}
+    <p class="text-muted small">
+      <i class="mdi mdi-information-outline me-1"></i>
+      Interfaces actives (hors mgmt-only) sans adresse IP assignée. Vue lecture seule.
+    </p>
+    <div class="card cleaner-card">
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0">
+          <thead>
+            <tr><th>Interface</th><th>Équipement</th><th>Site</th><th>Mode</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            {% for iface in ifaces %}
+            <tr>
+              <td>{{ iface.name }}</td>
+              <td>
+                <a href="/dcim/devices/{{ iface.device.pk }}/" target="_blank">
+                  {{ iface.device }}
+                </a>
+              </td>
+              <td>{{ iface.device.site|default:'—' }}</td>
+              <td>{{ iface.get_mode_display|default:'—' }}</td>
+              <td>
+                <a href="/dcim/interfaces/{{ iface.pk }}/" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                  <i class="mdi mdi-open-in-new"></i>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Toutes les interfaces actives ont une IP assignée.
+    </div>
+  {% endif %}
+{% endif %}
+
+{% endblock %}
