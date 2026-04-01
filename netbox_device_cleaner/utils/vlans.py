@@ -168,6 +168,8 @@ def merge_vlans(keep_pk, delete_pks):
     keep = VLAN.objects.get(pk=keep_pk)
     with transaction.atomic():
         for pk in delete_pks:
+            if not pk:
+                continue
             if int(pk) == int(keep_pk):
                 continue
             victim = VLAN.objects.get(pk=pk)

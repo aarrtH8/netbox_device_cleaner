@@ -276,7 +276,7 @@ async function mergeVlans(vid, idx) {
   const keepRadio = Array.from(radios).find(r => r.checked);
   if (!keepRadio) { showToast("Sélectionnez le VLAN à conserver.", 'warning'); return; }
   const keepId = keepRadio.value;
-  const deleteIds = Array.from(radios).filter(r => !r.checked).map(r => r.value);
+  const deleteIds = Array.from(radios).filter(r => !r.checked && r.value !== '').map(r => r.value);
   if (!deleteIds.length) { showToast("Rien à fusionner.", 'warning'); return; }
 
   if (!confirm(`Fusionner : conserver VLAN ${keepId}, supprimer ${deleteIds.length} autre(s) ?`)) return;
