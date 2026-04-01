@@ -21,16 +21,18 @@ def _stack_base(device_name):
     return m.group(1) if m else None
 
 
-def _is_stack_group(ips):
+def _is_stack_group(ips, iface_ct=None):
     """
     Retourne True si TOUS les doublons d'une IP sont assignés à des interfaces
     physiques d'équipements formant un stack (même base de nom, suffixes différents).
     Si une seule IP n'est pas sur un membre de stack identifié, retourne False.
+    iface_ct peut être passé depuis l'appelant pour éviter les requêtes répétées.
     """
     from dcim.models import Interface
     from django.contrib.contenttypes.models import ContentType
 
-    iface_ct = ContentType.objects.get_for_model(Interface)
+    if iface_ct is None:
+        iface_ct = ContentType.objects.get_for_model(Interface)
 
     # Toutes les IPs doivent être assignées à des interfaces physiques
     for ip in ips:
@@ -84,6 +86,12 @@ def get_duplicate_ip_detail():
     stack (même base de nom + suffixe numérique+P) sont automatiquement exclus.
     """
     from ipam.models import IPAddress
+    from dcim.models import Interface
+    from django.contrib.contenttypes.models import ContentType
+
+    # ContentType mis en cache une seule fois pour toutes les itérations
+    iface_ct = ContentType.objects.get_for_model(Interface)
+
     dup_keys = get_duplicate_ips().values_list('address', 'vrf')
     result = []
     for address, vrf_id in dup_keys:
@@ -93,7 +101,7 @@ def get_duplicate_ip_detail():
             .select_related('vrf', 'tenant')
         )
         # Ignorer les doublons qui s'expliquent par un stack
-        if _is_stack_group(ips):
+        if _is_stack_group(ips, iface_ct):
             continue
         result.append({
             'address': str(address),

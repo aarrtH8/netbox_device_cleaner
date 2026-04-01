@@ -454,10 +454,11 @@ class OrphansView(View):
         ids = request.POST.getlist('vrf_ids[]')
         if not ids:
             return _json_error("Aucun VRF sélectionné.")
+        # Validation AVANT la transaction pour éviter un rollback partiel
+        for vrf in VRF.objects.filter(pk__in=ids):
+            if Prefix.objects.filter(vrf=vrf).exists() or IPAddress.objects.filter(vrf=vrf).exists():
+                return _json_error(f"VRF «{vrf.name}» n'est pas vide — opération annulée.")
         with transaction.atomic():
-            for vrf in VRF.objects.filter(pk__in=ids):
-                if Prefix.objects.filter(vrf=vrf).exists() or IPAddress.objects.filter(vrf=vrf).exists():
-                    return _json_error(f"VRF «{vrf.name}» n'est pas vide — opération annulée.")
             deleted, _ = VRF.objects.filter(pk__in=ids).delete()
         return _json_ok(deleted=deleted, message=f"{deleted} VRF(s) supprimé(s).")
 
@@ -594,19 +595,21 @@ class PurgeView(View):
 
         results = []
         errors = []
-        try:
-            with transaction.atomic():
-                for item in items:
-                    try:
-                        kind, pk = item.split('_', 1)
-                        pk = int(pk)
-                        if kind not in ('device', 'vm'):
-                            continue
-                        results.append(_purge_object(kind, pk, delete_interfaces))
-                    except Exception as e:
-                        errors.append({'item': item, 'error': str(e)})
-                        logger.error('[Cleaner] %s: %s', item, e)
-        except Exception as e:
-            return JsonResponse({'success': False, 'error': str(e)})
+        for item in items:
+            try:
+                parts = item.split('_', 1)
+                if len(parts) != 2:
+                    errors.append({'item': item, 'error': 'Format invalide (attendu : kind_pk)'})
+                    continue
+                kind, pk_str = parts
+                if kind not in ('device', 'vm'):
+                    errors.append({'item': item, 'error': f'Type inconnu : {kind}'})
+                    continue
+                pk = int(pk_str)
+                with transaction.atomic():
+                    results.append(_purge_object(kind, pk, delete_interfaces))
+            except Exception as e:
+                errors.append({'item': item, 'error': str(e)})
+                logger.error('[Cleaner] %s: %s', item, e)
 
         return JsonResponse({'success': True, 'results': results, 'errors': errors})
