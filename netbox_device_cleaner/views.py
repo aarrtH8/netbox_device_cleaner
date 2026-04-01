@@ -480,12 +480,10 @@ def _purge_object(kind, pk, delete_interfaces):
     """
     if kind == 'vm':
         obj       = VirtualMachine.objects.get(pk=pk)
-        obj_ct    = ContentType.objects.get_for_model(VirtualMachine)
         iface_ct  = ContentType.objects.get_for_model(VMInterface)
         ifaces_qs = VMInterface.objects.filter(virtual_machine=obj)
     else:
         obj       = Device.objects.get(pk=pk)
-        obj_ct    = ContentType.objects.get_for_model(Device)
         iface_ct  = ContentType.objects.get_for_model(Interface)
         ifaces_qs = Interface.objects.filter(device=obj)
 
@@ -500,7 +498,10 @@ def _purge_object(kind, pk, delete_interfaces):
     }
 
     # ── 1. Services ──────────────────────────────────────────────────
-    svc_qs = Service.objects.filter(parent_object_type=obj_ct, parent_object_id=pk)
+    if kind == 'vm':
+        svc_qs = Service.objects.filter(virtual_machine=obj)
+    else:
+        svc_qs = Service.objects.filter(device=obj)
     result['services'] = svc_qs.count()
     svc_qs.delete()
 
@@ -564,13 +565,13 @@ class PurgeView(View):
         devices = (
             Device.objects
             .select_related('site', 'role', 'device_type__manufacturer', 'tenant')
-            .annotate(ip_count=Count('interfaces__ip_addresses', distinct=True))
+            .annotate(ip_count=Count('interfaces', distinct=True))
             .order_by('name')
         )
         vms = (
             VirtualMachine.objects
             .select_related('site', 'cluster', 'role', 'tenant')
-            .annotate(ip_count=Count('interfaces__ip_addresses', distinct=True))
+            .annotate(ip_count=Count('interfaces', distinct=True))
             .order_by('name')
         )
         return render(request, self.template_name, {

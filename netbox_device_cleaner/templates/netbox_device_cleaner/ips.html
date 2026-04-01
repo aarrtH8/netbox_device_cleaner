@@ -41,6 +41,10 @@
 
 {# ── Onglet : IPs en double ── #}
 {% if tab == 'duplicates' %}
+  <div class="alert alert-info py-2 mb-3" style="font-size:.875rem">
+    <i class="mdi mdi-information me-1"></i>
+    Les doublons entre membres d'un même <strong>stack</strong> (noms identiques sauf suffixe numérique&nbsp;+&nbsp;P — ex&nbsp;: <code>SW-CORE-01P</code> / <code>SW-CORE-02P</code>) sont automatiquement exclus.
+  </div>
   {% if groups %}
     {% for group in groups %}
     <div class="card cleaner-card mb-3">

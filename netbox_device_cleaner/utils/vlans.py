@@ -40,10 +40,10 @@ def get_unused_vlans():
     return (
         VLAN.objects
         .annotate(
-            tagged_iface_count=Count('interfaces_tagged', distinct=True),
-            untagged_iface_count=Count('interfaces_untagged', distinct=True),
-            tagged_vmiface_count=Count('vminterfaces_tagged', distinct=True),
-            untagged_vmiface_count=Count('vminterfaces_untagged', distinct=True),
+            tagged_iface_count=Count('interfaces_as_tagged', distinct=True),
+            untagged_iface_count=Count('interfaces_as_untagged', distinct=True),
+            tagged_vmiface_count=Count('vminterfaces_as_tagged', distinct=True),
+            untagged_vmiface_count=Count('vminterfaces_as_untagged', distinct=True),
         )
         .filter(
             tagged_iface_count=0,
@@ -85,10 +85,10 @@ def count_all():
     unused = (
         VLAN.objects
         .annotate(
-            tc=Count('interfaces_tagged', distinct=True),
-            uc=Count('interfaces_untagged', distinct=True),
-            tvc=Count('vminterfaces_tagged', distinct=True),
-            uvc=Count('vminterfaces_untagged', distinct=True),
+            tc=Count('interfaces_as_tagged', distinct=True),
+            uc=Count('interfaces_as_untagged', distinct=True),
+            tvc=Count('vminterfaces_as_tagged', distinct=True),
+            uvc=Count('vminterfaces_as_untagged', distinct=True),
         )
         .filter(tc=0, uc=0, tvc=0, uvc=0)
         .count()
