@@ -44,6 +44,10 @@
 
 {# ── Tab: Doublons ── #}
 {% if tab == 'duplicates' %}
+  <div class="alert alert-info py-2 mb-3" style="font-size:.875rem">
+    <i class="mdi mdi-information me-1"></i>
+    Les VLANs avec le même ID mais dans des <strong>tenants différents</strong> et avec des <strong>réseaux (préfixes) distincts</strong> sont automatiquement exclus — ce sont des VLANs tenant-isolés légitimes.
+  </div>
   {% if groups %}
     {% for group in groups %}
     <div class="card cleaner-card mb-3">
