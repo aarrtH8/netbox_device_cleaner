@@ -2,8 +2,50 @@
 from django.db.models import Count
 
 
+def _is_genuine_duplicate_group(vlans):
+    """
+    Détermine si un groupe de VLANs partageant le même VID est un vrai doublon.
+
+    Règles :
+    1. Même tenant (ou au moins un VLAN sans tenant) → doublon.
+    2. Tenants tous différents et tous renseignés :
+       - Au moins un VLAN sans préfixe associé → doublon (prudence).
+       - Deux VLANs partagent un même préfixe réseau → doublon.
+       - Tous ont des préfixes distincts → PAS un doublon (VLANs tenant-isolés).
+    """
+    if len(vlans) <= 1:
+        return False
+
+    tenant_ids = [v.tenant_id for v in vlans]
+
+    # Règle 1 : tenant absent ou partagé → doublon
+    if None in tenant_ids or len(set(tenant_ids)) < len(tenant_ids):
+        return True
+
+    # Règle 2 : tenants tous différents → vérifier les préfixes
+    for vlan in vlans:
+        prefixes = list(vlan.prefixes.all())
+        if not prefixes:
+            # Pas de réseau associé : impossible de confirmer l'isolement
+            return True
+
+    # Comparer les préfixes deux à deux
+    prefix_sets = [
+        set(str(p.prefix) for p in vlan.prefixes.all())
+        for vlan in vlans
+    ]
+    for i in range(len(prefix_sets)):
+        for j in range(i + 1, len(prefix_sets)):
+            if prefix_sets[i] & prefix_sets[j]:
+                # Réseau partagé entre deux tenants différents → doublon
+                return True
+
+    # Tenants différents, réseaux différents → VLANs tenant-isolés, pas de problème
+    return False
+
+
 def get_duplicate_vids():
-    """Groupes de VLANs partageant le même (vid, group, site)."""
+    """Groupes de VLANs partageant le même (vid, group, site) — filtre large."""
     from ipam.models import VLAN
     return (
         VLAN.objects
@@ -15,21 +57,27 @@ def get_duplicate_vids():
 
 
 def get_duplicate_vlan_detail():
-    """Objets VLAN complets pour chaque groupe de doublons."""
+    """
+    Objets VLAN complets pour chaque groupe de vrais doublons.
+    Exclut les groupes où des tenants différents utilisent des réseaux distincts.
+    """
     from ipam.models import VLAN
     duplicates = get_duplicate_vids().values_list('vid', 'group', 'site')
     result = []
     for vid, group_id, site_id in duplicates:
-        vlans = (
+        vlans = list(
             VLAN.objects
             .filter(vid=vid, group_id=group_id, site_id=site_id)
             .select_related('site', 'group', 'tenant', 'role')
+            .prefetch_related('prefixes')
         )
+        if not _is_genuine_duplicate_group(vlans):
+            continue
         result.append({
             'vid': vid,
             'group_id': group_id,
             'site_id': site_id,
-            'vlans': list(vlans),
+            'vlans': vlans,
         })
     return result
 
@@ -81,7 +129,10 @@ def get_vlans_without_site_or_group():
 def count_all():
     """Comptages rapides pour le dashboard."""
     from ipam.models import VLAN
-    duplicates = get_duplicate_vids().count()
+
+    # Vrais doublons : applique le filtre tenant+préfixe
+    duplicates = len(get_duplicate_vlan_detail())
+
     unused = (
         VLAN.objects
         .annotate(
