@@ -88,6 +88,31 @@ def get_duplicate_mac_detail():
     return result
 
 
+def get_interfaces_no_ip_qs():
+    """
+    Queryset complet des interfaces sans IP — pour la pagination côté serveur.
+    Retourne Interface.objects.none() en cas d'erreur.
+    """
+    from dcim.models import Interface
+    from ipam.models import IPAddress
+    from django.contrib.contenttypes.models import ContentType
+    try:
+        iface_ct = ContentType.objects.get_for_model(Interface)
+        has_ip = IPAddress.objects.filter(
+            assigned_object_type=iface_ct,
+            assigned_object_id=OuterRef('pk'),
+        )
+        return (
+            Interface.objects
+            .annotate(has_ip=Exists(has_ip))
+            .filter(has_ip=False, mgmt_only=False)
+            .select_related('device__site')
+            .order_by('device__name', 'name')
+        )
+    except Exception:
+        return Interface.objects.none()
+
+
 def get_interfaces_no_ip(max_results=500):
     """
     Interfaces physiques sans IP assignée (hors mgmt-only).

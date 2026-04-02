@@ -69,7 +69,7 @@
 
 {# ── Onglets devices (no_primary_ip, no_site, no_role, no_device_type) ── #}
 {% if tab == 'no_primary_ip' or tab == 'no_site' or tab == 'no_role' or tab == 'no_device_type' %}
-  {% if devices %}
+  {% if page_obj and page_obj.object_list %}
     <div class="mb-2">
       <div class="input-group" style="max-width:320px">
         <span class="input-group-text"><i class="mdi mdi-magnify"></i></span>
@@ -92,7 +92,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for d in devices %}
+            {% for d in page_obj %}
             <tr>
               <td>
                 <a href="/dcim/devices/{{ d.pk }}/" target="_blank">
@@ -121,6 +121,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Aucun équipement avec ce problème.
@@ -130,7 +131,7 @@
 
 {# ── Onglet : VMs sans cluster ── #}
 {% if tab == 'no_cluster' %}
-  {% if vms %}
+  {% if page_obj and page_obj.object_list %}
     <p class="text-muted small">
       <i class="mdi mdi-information-outline me-1"></i>Vue lecture seule — cliquez sur "Modifier" pour corriger.
     </p>
@@ -141,7 +142,7 @@
             <tr><th>Nom VM</th><th>Site</th><th>Rôle</th><th>Tenant</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {% for vm in vms %}
+            {% for vm in page_obj %}
             <tr>
               <td>
                 <a href="/virtualization/virtual-machines/{{ vm.pk }}/" target="_blank">
@@ -163,6 +164,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Toutes les VMs ont un cluster assigné.
@@ -247,13 +249,7 @@
 
 {# ── Onglet : Interfaces sans IP ── #}
 {% if tab == 'iface_no_ip' %}
-  {% if truncated %}
-  <div class="alert alert-warning">
-    <i class="mdi mdi-alert me-2"></i>
-    <strong>Résultats tronqués</strong> : {{ total }} interfaces sans IP détectées, affichage limité à 500.
-  </div>
-  {% endif %}
-  {% if ifaces %}
+  {% if page_obj and page_obj.object_list %}
     <p class="text-muted small">
       <i class="mdi mdi-information-outline me-1"></i>
       Interfaces actives (hors mgmt-only) sans adresse IP assignée. Vue lecture seule.
@@ -265,7 +261,7 @@
             <tr><th>Interface</th><th>Équipement</th><th>Site</th><th>Mode</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {% for iface in ifaces %}
+            {% for iface in page_obj %}
             <tr>
               <td>{{ iface.name }}</td>
               <td>
@@ -287,6 +283,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Toutes les interfaces actives ont une IP assignée.

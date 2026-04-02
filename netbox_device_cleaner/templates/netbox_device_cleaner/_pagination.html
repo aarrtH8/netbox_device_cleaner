@@ -1,0 +1,42 @@
+{% if page_obj %}
+<div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+
+  {# ── Navigation pages ── #}
+  <nav aria-label="Pagination">
+    <ul class="pagination pagination-sm mb-0">
+      {% if page_obj.has_previous %}
+        <li class="page-item">
+          <a class="page-link" href="?tab={{ tab }}&per_page={{ per_page }}&page={{ page_obj.previous_page_number }}">‹ Précédent</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">‹ Précédent</span></li>
+      {% endif %}
+      <li class="page-item disabled">
+        <span class="page-link">Page&nbsp;{{ page_obj.number }}&nbsp;/&nbsp;{{ page_obj.paginator.num_pages }}</span>
+      </li>
+      {% if page_obj.has_next %}
+        <li class="page-item">
+          <a class="page-link" href="?tab={{ tab }}&per_page={{ per_page }}&page={{ page_obj.next_page_number }}">Suivant ›</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">Suivant ›</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+
+  {# ── Lignes par page + compteur ── #}
+  <div class="d-flex align-items-center gap-2 text-muted small">
+    <label class="mb-0">Lignes par page&nbsp;:</label>
+    <select class="form-select form-select-sm" style="width:auto" onchange="setPerPage(this.value)">
+      <option value="25"  {% if per_page == 25  %}selected{% endif %}>25</option>
+      <option value="50"  {% if per_page == 50  %}selected{% endif %}>50</option>
+      <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+      <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+    </select>
+    <span class="text-nowrap">
+      {{ page_obj.start_index }}–{{ page_obj.end_index }}&nbsp;sur&nbsp;{{ page_obj.paginator.count }}
+    </span>
+  </div>
+
+</div>
+{% endif %}

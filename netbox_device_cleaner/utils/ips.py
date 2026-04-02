@@ -122,6 +122,28 @@ def get_orphan_ips():
     )
 
 
+def get_ips_outside_prefix_qs():
+    """
+    Queryset complet des IPs hors préfixe — pour la pagination côté serveur.
+    Retourne IPAddress.objects.none() si le lookup réseau n'est pas disponible.
+    """
+    from ipam.models import IPAddress, Prefix
+    try:
+        prefix_contains = Prefix.objects.filter(
+            prefix__net_contains_or_equals=OuterRef('address'),
+            vrf=OuterRef('vrf'),
+        )
+        return (
+            IPAddress.objects
+            .annotate(has_prefix=Exists(prefix_contains))
+            .filter(has_prefix=False)
+            .select_related('vrf', 'tenant')
+            .order_by('address')
+        )
+    except Exception:
+        return IPAddress.objects.none()
+
+
 def get_ips_outside_prefix(max_results=500):
     """
     IPs qui ne tombent dans aucun préfixe défini (même VRF).

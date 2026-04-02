@@ -48,6 +48,22 @@ def _json_ok(**kwargs):
     return JsonResponse({'success': True, **kwargs})
 
 
+_VALID_PER_PAGE = frozenset({25, 50, 100, 200})
+
+
+def _paginate(request, qs_or_list, default_per_page=50):
+    """Paginateur configurable via ?per_page= (valeurs : 25/50/100/200, défaut 50)."""
+    try:
+        per_page = int(request.GET.get('per_page', default_per_page))
+    except (ValueError, TypeError):
+        per_page = default_per_page
+    if per_page not in _VALID_PER_PAGE:
+        per_page = default_per_page
+    paginator = Paginator(qs_or_list, per_page)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    return page_obj, per_page
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
@@ -102,11 +118,11 @@ class VlanHealthView(View):
         if tab == 'duplicates':
             ctx['groups'] = vlan_utils.get_duplicate_vlan_detail()
         elif tab == 'unused':
-            ctx['vlans'] = vlan_utils.get_unused_vlans()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_unused_vlans())
         elif tab == 'no_group':
-            ctx['vlans'] = vlan_utils.get_vlans_without_group()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_vlans_without_group())
         else:
-            ctx['vlans'] = vlan_utils.get_vlans_without_site_or_group()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_vlans_without_site_or_group())
         return render(request, self.template_name, ctx)
 
     def post(self, request):
@@ -187,14 +203,9 @@ class IpHealthView(View):
         if tab == 'duplicates':
             ctx['groups'] = ip_utils.get_duplicate_ip_detail()
         elif tab == 'orphans':
-            qs = ip_utils.get_orphan_ips()
-            paginator = Paginator(qs, 100)
-            ctx['page_obj'] = paginator.get_page(request.GET.get('page', 1))
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, ip_utils.get_orphan_ips())
         else:
-            ips, total = ip_utils.get_ips_outside_prefix(max_results=500)
-            ctx['ips'] = ips
-            ctx['total'] = total
-            ctx['truncated'] = total > 500
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, ip_utils.get_ips_outside_prefix_qs())
         return render(request, self.template_name, ctx)
 
     def post(self, request):
@@ -262,19 +273,20 @@ class PrefixHealthView(View):
         }
         if tab == 'overlapping':
             try:
-                ctx['prefixes'] = list(prefix_utils.get_overlapping_prefixes())
+                ctx['page_obj'], ctx['per_page'] = _paginate(request, prefix_utils.get_overlapping_prefixes())
             except Exception:
-                ctx['prefixes'] = []
+                ctx['page_obj'] = None
+                ctx['per_page'] = 50
                 ctx['lookup_error'] = True
         elif tab == 'unused':
             try:
-                qs = prefix_utils.get_unused_prefixes()
-                ctx['page_obj'] = Paginator(qs, 100).get_page(request.GET.get('page', 1))
+                ctx['page_obj'], ctx['per_page'] = _paginate(request, prefix_utils.get_unused_prefixes())
             except Exception:
                 ctx['page_obj'] = None
+                ctx['per_page'] = 50
                 ctx['lookup_error'] = True
         else:
-            ctx['prefixes'] = list(prefix_utils.get_prefixes_without_vrf())
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, prefix_utils.get_prefixes_without_vrf())
             ctx['vrfs'] = list(VRF.objects.all().order_by('name'))
         return render(request, self.template_name, ctx)
 
@@ -350,24 +362,23 @@ class DeviceHealthView(View):
             'tab': tab,
             'tab_counts': counts,
         }
-        if tab == 'no_primary_ip':
-            ctx['devices'] = device_utils.get_devices_missing_primary_ip()
-        elif tab == 'no_site':
-            ctx['devices'] = device_utils.get_devices_missing_site()
-        elif tab == 'no_role':
-            ctx['devices'] = device_utils.get_devices_missing_role()
-        elif tab == 'no_device_type':
-            ctx['devices'] = device_utils.get_devices_missing_device_type()
+        device_tabs = {
+            'no_primary_ip': device_utils.get_devices_missing_primary_ip,
+            'no_site':       device_utils.get_devices_missing_site,
+            'no_role':       device_utils.get_devices_missing_role,
+            'no_device_type': device_utils.get_devices_missing_device_type,
+        }
+        if tab in device_tabs:
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, device_tabs[tab]())
         elif tab == 'no_cluster':
-            ctx['vms'] = device_utils.get_vms_missing_cluster()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, device_utils.get_vms_missing_cluster())
         elif tab == 'dup_macs':
             ctx['mac_groups'] = device_utils.get_duplicate_mac_detail()
         elif tab == 'iface_no_ip':
-            ifaces, total = device_utils.get_interfaces_no_ip(max_results=500)
-            ctx['ifaces'] = ifaces
-            ctx['total'] = total
-            ctx['truncated'] = total > 500
-            counts['iface_no_ip'] = total
+            page_obj, per_page = _paginate(request, device_utils.get_interfaces_no_ip_qs())
+            ctx['page_obj'] = page_obj
+            ctx['per_page'] = per_page
+            counts['iface_no_ip'] = page_obj.paginator.count
             ctx['tab_counts'] = counts
         return render(request, self.template_name, ctx)
 
@@ -397,13 +408,13 @@ class OrphansView(View):
             'tab_counts': self._tab_counts(),
         }
         if tab == 'services':
-            ctx['services'] = orphan_utils.get_orphan_services()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, orphan_utils.get_orphan_services())
         elif tab == 'vrfs_empty':
-            ctx['vrfs'] = orphan_utils.get_empty_vrfs()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, orphan_utils.get_empty_vrfs())
         elif tab == 'vrfs_no_rt':
-            ctx['vrfs'] = orphan_utils.get_vrfs_without_route_targets()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, orphan_utils.get_vrfs_without_route_targets())
         else:
-            ctx['aggregates'] = orphan_utils.get_aggregates_without_prefixes()
+            ctx['page_obj'], ctx['per_page'] = _paginate(request, orphan_utils.get_aggregates_without_prefixes())
         return render(request, self.template_name, ctx)
 
     def post(self, request):

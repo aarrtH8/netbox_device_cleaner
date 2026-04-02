@@ -52,7 +52,7 @@
 
 {# ── Onglet : Services orphelins ── #}
 {% if tab == 'services' %}
-  {% if services %}
+  {% if page_obj and page_obj.object_list %}
     <div class="d-flex justify-content-end mb-2 gap-2">
       <button class="btn btn-sm btn-danger" onclick="deleteAllOrphanServices()">
         <i class="mdi mdi-delete-sweep me-1"></i>Supprimer tous les services orphelins
@@ -73,7 +73,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for svc in services %}
+            {% for svc in page_obj %}
             <tr id="svc-row-{{ svc.pk }}">
               <td><input type="checkbox" class="row-check" value="{{ svc.pk }}"></td>
               <td><strong>{{ svc.name }}</strong></td>
@@ -99,6 +99,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Aucun service orphelin détecté.
@@ -108,7 +109,7 @@
 
 {# ── Onglet : VRFs vides ── #}
 {% if tab == 'vrfs_empty' %}
-  {% if vrfs %}
+  {% if page_obj and page_obj.object_list %}
     <div class="d-flex justify-content-end mb-2">
       <button class="btn btn-sm btn-outline-secondary"
               onclick="document.getElementById('checkAll').click()">
@@ -129,7 +130,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for vrf in vrfs %}
+            {% for vrf in page_obj %}
             <tr id="vrf-row-{{ vrf.pk }}">
               <td><input type="checkbox" class="row-check" value="{{ vrf.pk }}"></td>
               <td><strong>{{ vrf.name }}</strong></td>
@@ -151,6 +152,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Aucun VRF vide.
@@ -160,7 +162,7 @@
 
 {# ── Onglet : VRFs sans RT ── #}
 {% if tab == 'vrfs_no_rt' %}
-  {% if vrfs %}
+  {% if page_obj and page_obj.object_list %}
     <div class="alert alert-info mb-3">
       <i class="mdi mdi-information me-2"></i>
       Ces VRFs n'ont ni route target d'import ni d'export. Vue informative — cela peut être intentionnel.
@@ -172,7 +174,7 @@
             <tr><th>Nom VRF</th><th>RD</th><th>Tenant</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {% for vrf in vrfs %}
+            {% for vrf in page_obj %}
             <tr>
               <td><strong>{{ vrf.name }}</strong></td>
               <td><code>{{ vrf.rd|default:'—' }}</code></td>
@@ -193,6 +195,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Tous les VRFs ont des route targets configurés.
@@ -202,7 +205,7 @@
 
 {# ── Onglet : Agrégats sans préfixe ── #}
 {% if tab == 'aggregates' %}
-  {% if aggregates %}
+  {% if page_obj and page_obj.object_list %}
     <div class="alert alert-info mb-3">
       <i class="mdi mdi-information me-2"></i>
       Ces agrégats (blocs RIR) n'ont aucun préfixe enfant. Vue informative.
@@ -214,7 +217,7 @@
             <tr><th>Préfixe</th><th>RIR</th><th>Tenant</th><th>Date acquisition</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {% for agg in aggregates %}
+            {% for agg in page_obj %}
             <tr>
               <td><strong><code>{{ agg.prefix }}</code></strong></td>
               <td>{{ agg.rir }}</td>
@@ -232,6 +235,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Tous les agrégats ont des préfixes enfants.

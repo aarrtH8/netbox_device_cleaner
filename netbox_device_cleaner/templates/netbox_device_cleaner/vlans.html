@@ -127,7 +127,7 @@
 
 {# ── Tab: Inutilisés, Sans groupe, Globaux ── #}
 {% if tab == 'unused' or tab == 'no_group' or tab == 'no_site_group' %}
-  {% if vlans %}
+  {% if page_obj and page_obj.object_list %}
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div class="input-group" style="max-width:320px">
         <span class="input-group-text"><i class="mdi mdi-magnify"></i></span>
@@ -168,7 +168,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for vlan in vlans %}
+            {% for vlan in page_obj %}
             <tr id="vlan-row-{{ vlan.pk }}">
               <td><input type="checkbox" class="row-check" value="{{ vlan.pk }}"></td>
               <td><strong>{{ vlan.vid }}</strong></td>
@@ -198,6 +198,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Aucun VLAN trouvé pour ce critère.

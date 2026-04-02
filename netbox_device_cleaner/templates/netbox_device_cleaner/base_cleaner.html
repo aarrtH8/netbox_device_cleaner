@@ -307,6 +307,14 @@ function btnLoading(btn, loading) {
   }
 }
 
+// ── Sélecteur de lignes par page ─────────────────────────
+function setPerPage(val) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('per_page', val);
+  url.searchParams.set('page', '1');
+  window.location.href = url.toString();
+}
+
 // ── Animation CSS ────────────────────────────────────────
 const style = document.createElement('style');
 style.textContent = '@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}';
