@@ -37,7 +37,7 @@ def get_duplicate_vids():
     from ipam.models import VLAN
     return (
         VLAN.objects
-        .values('vid', 'group', 'site')
+        .values('vid', 'group', '_site')
         .annotate(n=Count('pk'))
         .filter(n__gt=1)
         .order_by('vid')
@@ -50,13 +50,13 @@ def get_duplicate_vlan_detail():
     Exclut les groupes où des tenants différents utilisent des réseaux distincts.
     """
     from ipam.models import VLAN
-    duplicates = get_duplicate_vids().values_list('vid', 'group', 'site')
+    duplicates = get_duplicate_vids().values_list('vid', 'group', '_site')
     result = []
     for vid, group_id, site_id in duplicates:
         vlans = list(
             VLAN.objects
-            .filter(vid=vid, group_id=group_id, site_id=site_id)
-            .select_related('site', 'group', 'tenant', 'role')
+            .filter(vid=vid, group_id=group_id, _site_id=site_id)
+            .select_related('_site', 'group', 'tenant', 'role')
             .prefetch_related('prefixes')
         )
         ctype = _conflict_type(vlans)
@@ -89,7 +89,7 @@ def get_unused_vlans():
             tagged_vmiface_count=0,
             untagged_vmiface_count=0,
         )
-        .select_related('site', 'group', 'tenant', 'role')
+        .select_related('_site', 'group', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -100,7 +100,7 @@ def get_vlans_without_group():
     return (
         VLAN.objects
         .filter(group=None)
-        .select_related('site', 'tenant', 'role')
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -110,7 +110,7 @@ def get_vlans_without_site_or_group():
     from ipam.models import VLAN
     return (
         VLAN.objects
-        .filter(site=None, group=None)
+        .filter(_site=None, group=None)
         .select_related('tenant', 'role')
         .order_by('vid')
     )
@@ -138,7 +138,7 @@ def suggest_vlan_groups():
     vlans = list(
         VLAN.objects
         .filter(group=None)
-        .select_related('site', 'tenant', 'role')
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
     if not vlans:
@@ -157,11 +157,12 @@ def suggest_vlan_groups():
             vlan_site_counts[vlan_pk][site.pk] += 1
             site_objs[site.pk] = site
 
-    # 1. Site directement sur le VLAN (fort signal)
+    # 1. Site directement sur le VLAN (via _site, scope NetBox 4.x)
     for vlan in vlans:
-        if vlan.site_id:
-            vlan_site_counts[vlan.pk][vlan.site_id] += 3   # poids plus élevé
-            site_objs[vlan.site_id] = vlan.site
+        _site = getattr(vlan, '_site', None) or getattr(vlan, 'site', None)
+        if _site and _site.pk:
+            vlan_site_counts[vlan.pk][_site.pk] += 3   # poids plus élevé
+            site_objs[_site.pk] = _site
 
     # 2. Interfaces physiques – untagged_vlan
     for iface in (
@@ -274,7 +275,7 @@ def count_all():
         .count()
     )
     no_group = VLAN.objects.filter(group=None).count()
-    global_vlans = VLAN.objects.filter(site=None, group=None).count()
+    global_vlans = VLAN.objects.filter(_site=None, group=None).count()
     return {
         'vlans_dup': duplicates,
         'vlans_unused': unused,
