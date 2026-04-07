@@ -2,30 +2,34 @@
 from django.db.models import Count
 
 
-def _is_genuine_duplicate_group(vlans):
+def _conflict_type(vlans):
     """
-    Détermine si un groupe de VLANs partageant le même VID est un vrai doublon.
+    Retourne le type de conflit pour un groupe de VLANs, ou None si aucun conflit.
 
-    Règles :
-    - Au moins un VLAN sans tenant → doublon (tenant non renseigné = cas ambigu).
-    - Tous les tenants renseignés et tous différents → PAS un doublon (isolation par tenant).
-    - Deux VLANs ou plus partagent le même tenant → doublon.
+    - 'tenant' : au moins un VLAN sans tenant, ou deux VLANs partagent le même tenant.
+    - 'ip'     : tenants tous différents et renseignés, mais deux VLANs partagent un préfixe.
+    - None     : tenants différents, préfixes distincts → VLANs tenant-isolés légitimes.
     """
     if len(vlans) <= 1:
-        return False
+        return None
 
     tenant_ids = [v.tenant_id for v in vlans]
 
-    # Au moins un tenant absent → doublon
-    if None in tenant_ids:
-        return True
+    if None in tenant_ids or len(set(tenant_ids)) < len(tenant_ids):
+        return 'tenant'
 
-    # Tous différents → tenant-isolés, pas de problème
-    if len(set(tenant_ids)) == len(tenant_ids):
-        return False
+    # Tenants tous différents → vérifier les conflits IP
+    prefix_sets = [set(str(p.prefix) for p in vlan.prefixes.all()) for vlan in vlans]
+    for i in range(len(prefix_sets)):
+        for j in range(i + 1, len(prefix_sets)):
+            if prefix_sets[i] & prefix_sets[j]:
+                return 'ip'
 
-    # Certains tenants sont partagés → doublon
-    return True
+    return None
+
+
+def _is_genuine_duplicate_group(vlans):
+    return _conflict_type(vlans) is not None
 
 
 def get_duplicate_vids():
@@ -53,14 +57,17 @@ def get_duplicate_vlan_detail():
             VLAN.objects
             .filter(vid=vid, group_id=group_id, site_id=site_id)
             .select_related('site', 'group', 'tenant', 'role')
+            .prefetch_related('prefixes')
         )
-        if not _is_genuine_duplicate_group(vlans):
+        ctype = _conflict_type(vlans)
+        if ctype is None:
             continue
         result.append({
             'vid': vid,
             'group_id': group_id,
             'site_id': site_id,
             'vlans': vlans,
+            'conflict_type': ctype,
         })
     return result
 

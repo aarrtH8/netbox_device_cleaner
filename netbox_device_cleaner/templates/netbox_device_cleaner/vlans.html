@@ -46,15 +46,22 @@
 {% if tab == 'duplicates' %}
   <div class="alert alert-info py-2 mb-3" style="font-size:.875rem">
     <i class="mdi mdi-information me-1"></i>
-    Les VLANs avec le même ID mais dans des <strong>tenants différents</strong> et avec des <strong>réseaux (préfixes) distincts</strong> sont automatiquement exclus — ce sont des VLANs tenant-isolés légitimes.
+    <span class="badge bg-danger me-1">Conflit tenant</span> même tenant ou tenant absent.
+    <span class="badge bg-warning text-dark ms-2 me-1">Conflit IP</span> tenants différents mais préfixe partagé.
+    Les VLANs tenant-isolés avec des préfixes distincts sont automatiquement exclus.
   </div>
   {% if groups %}
     {% for group in groups %}
     <div class="card cleaner-card mb-3">
-      <div class="card-header d-flex align-items-center" style="background:rgba(201,75,75,.08)">
-        <i class="mdi mdi-alert-circle text-danger me-2"></i>
+      <div class="card-header d-flex align-items-center" style="background:{% if group.conflict_type == 'ip' %}rgba(255,193,7,.1){% else %}rgba(201,75,75,.08){% endif %}">
+        <i class="mdi mdi-alert-circle {% if group.conflict_type == 'ip' %}text-warning{% else %}text-danger{% endif %} me-2"></i>
         <strong>VLAN ID {{ group.vid }}</strong>
         <span class="ms-2 text-muted">— {{ group.vlans|length }} occurrence{% if group.vlans|length != 1 %}s{% endif %}</span>
+        {% if group.conflict_type == 'ip' %}
+          <span class="badge bg-warning text-dark ms-2">Conflit IP</span>
+        {% else %}
+          <span class="badge bg-danger ms-2">Conflit tenant</span>
+        {% endif %}
         {% if group.vlans.0.site %}<span class="badge bg-info ms-2">Site : {{ group.vlans.0.site }}</span>{% endif %}
         {% if group.vlans.0.group %}<span class="badge bg-secondary ms-1">Groupe : {{ group.vlans.0.group }}</span>{% endif %}
       </div>
@@ -70,6 +77,7 @@
               <th>Site</th>
               <th>Groupe</th>
               <th>Tenant</th>
+              <th>Préfixes / IPs</th>
               <th>Rôle</th>
               <th>Actions</th>
             </tr>
@@ -93,6 +101,13 @@
               <td>{{ vlan.site|default:'—' }}</td>
               <td>{{ vlan.group|default:'—' }}</td>
               <td>{{ vlan.tenant|default:'—' }}</td>
+              <td>
+                {% for prefix in vlan.prefixes.all %}
+                  <span class="badge bg-light text-dark border me-1" title="{{ prefix.prefix }}">{{ prefix.prefix }}</span>
+                {% empty %}
+                  <span class="text-muted">—</span>
+                {% endfor %}
+              </td>
               <td>{{ vlan.role|default:'—' }}</td>
               <td>
                 <button class="btn btn-sm btn-outline-danger"
