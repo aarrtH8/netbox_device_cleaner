@@ -33,11 +33,11 @@ def _is_genuine_duplicate_group(vlans):
 
 
 def get_duplicate_vids():
-    """Groupes de VLANs partageant le même (vid, group, site) — filtre large."""
+    """Groupes de VLANs partageant le même (vid, group) — filtre large."""
     from ipam.models import VLAN
     return (
         VLAN.objects
-        .values('vid', 'group', '_site')
+        .values('vid', 'group')
         .annotate(n=Count('pk'))
         .filter(n__gt=1)
         .order_by('vid')
@@ -50,12 +50,12 @@ def get_duplicate_vlan_detail():
     Exclut les groupes où des tenants différents utilisent des réseaux distincts.
     """
     from ipam.models import VLAN
-    duplicates = get_duplicate_vids().values_list('vid', 'group', '_site')
+    duplicates = get_duplicate_vids().values_list('vid', 'group')
     result = []
-    for vid, group_id, site_id in duplicates:
+    for vid, group_id in duplicates:
         vlans = list(
             VLAN.objects
-            .filter(vid=vid, group_id=group_id, _site_id=site_id)
+            .filter(vid=vid, group_id=group_id)
             .select_related('_site', 'group', 'tenant', 'role')
             .prefetch_related('prefixes')
         )
@@ -65,7 +65,6 @@ def get_duplicate_vlan_detail():
         result.append({
             'vid': vid,
             'group_id': group_id,
-            'site_id': site_id,
             'vlans': vlans,
             'conflict_type': ctype,
         })
@@ -106,12 +105,12 @@ def get_vlans_without_group():
 
 
 def get_vlans_without_site_or_group():
-    """VLANs globaux (sans site ni groupe) — potentiellement orphelins."""
+    """VLANs sans groupe (NetBox 4.4.6 : VLAN n'a plus de champ site direct)."""
     from ipam.models import VLAN
     return (
         VLAN.objects
-        .filter(_site=None, group=None)
-        .select_related('tenant', 'role')
+        .filter(group=None)
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -157,14 +156,10 @@ def suggest_vlan_groups():
             vlan_site_counts[vlan_pk][site.pk] += 1
             site_objs[site.pk] = site
 
-    # 1. Site directement sur le VLAN (via _site, scope NetBox 4.x)
-    for vlan in vlans:
-        _site = getattr(vlan, '_site', None) or getattr(vlan, 'site', None)
-        if _site and _site.pk:
-            vlan_site_counts[vlan.pk][_site.pk] += 3   # poids plus élevé
-            site_objs[_site.pk] = _site
+    # NetBox 4.4.6 : VLAN n'a plus de champ site direct.
+    # Le site est détecté uniquement via les interfaces des équipements associés.
 
-    # 2. Interfaces physiques – untagged_vlan
+    # 1. Interfaces physiques – untagged_vlan
     for iface in (
         Interface.objects
         .filter(untagged_vlan_id__in=vlan_pks, device__site__isnull=False)
@@ -172,7 +167,7 @@ def suggest_vlan_groups():
     ):
         _add_site(iface.untagged_vlan_id, iface.device.site)
 
-    # 3. Interfaces physiques – tagged_vlans (via table M2M)
+    # 2. Interfaces physiques – tagged_vlans (via table M2M)
     try:
         tagged_through = Interface.tagged_vlans.through
         for row in (
@@ -185,7 +180,7 @@ def suggest_vlan_groups():
     except Exception:
         pass
 
-    # 4. VMInterfaces – untagged_vlan
+    # 3. VMInterfaces – untagged_vlan
     for vmiface in (
         VMInterface.objects
         .filter(untagged_vlan_id__in=vlan_pks)
@@ -197,7 +192,7 @@ def suggest_vlan_groups():
         )
         _add_site(vmiface.untagged_vlan_id, site)
 
-    # 5. VMInterfaces – tagged_vlans (via table M2M)
+    # 4. VMInterfaces – tagged_vlans (via table M2M)
     try:
         vm_tagged_through = VMInterface.tagged_vlans.through
         for row in (
@@ -275,7 +270,7 @@ def count_all():
         .count()
     )
     no_group = VLAN.objects.filter(group=None).count()
-    global_vlans = VLAN.objects.filter(_site=None, group=None).count()
+    global_vlans = 0  # NetBox 4.4.6 : VLAN n'a plus de champ site direct
     return {
         'vlans_dup': duplicates,
         'vlans_unused': unused,
