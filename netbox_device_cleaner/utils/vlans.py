@@ -56,7 +56,7 @@ def get_duplicate_vlan_detail():
         vlans = list(
             VLAN.objects
             .filter(vid=vid, group_id=group_id)
-            .select_related('_site', 'group', 'tenant', 'role')
+            .select_related('site', 'group', 'tenant', 'role')
             .prefetch_related('prefixes')
         )
         ctype = _conflict_type(vlans)
@@ -88,7 +88,7 @@ def get_unused_vlans():
             tagged_vmiface_count=0,
             untagged_vmiface_count=0,
         )
-        .select_related('_site', 'group', 'tenant', 'role')
+        .select_related('site', 'group', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -99,18 +99,18 @@ def get_vlans_without_group():
     return (
         VLAN.objects
         .filter(group=None)
-        .select_related('_site', 'tenant', 'role')
+        .select_related('site', 'tenant', 'role')
         .order_by('vid')
     )
 
 
 def get_vlans_without_site_or_group():
-    """VLANs sans groupe (NetBox 4.4.6 : VLAN n'a plus de champ site direct)."""
+    """VLANs globaux (sans site ni groupe)."""
     from ipam.models import VLAN
     return (
         VLAN.objects
-        .filter(group=None)
-        .select_related('_site', 'tenant', 'role')
+        .filter(site=None, group=None)
+        .select_related('site', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -137,7 +137,7 @@ def suggest_vlan_groups():
     vlans = list(
         VLAN.objects
         .filter(group=None)
-        .select_related('_site', 'tenant', 'role')
+        .select_related('site', 'tenant', 'role')
         .order_by('vid')
     )
     if not vlans:
@@ -270,7 +270,7 @@ def count_all():
         .count()
     )
     no_group = VLAN.objects.filter(group=None).count()
-    global_vlans = 0  # NetBox 4.4.6 : VLAN n'a plus de champ site direct
+    global_vlans = VLAN.objects.filter(site=None, group=None).count()
     return {
         'vlans_dup': duplicates,
         'vlans_unused': unused,
