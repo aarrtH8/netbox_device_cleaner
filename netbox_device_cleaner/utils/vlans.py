@@ -56,7 +56,7 @@ def get_duplicate_vlan_detail():
         vlans = list(
             VLAN.objects
             .filter(vid=vid, group_id=group_id)
-            .select_related('group', 'tenant', 'role')
+            .select_related('_site', 'group', 'tenant', 'role')
             .prefetch_related('prefixes')
         )
         ctype = _conflict_type(vlans)
@@ -88,7 +88,7 @@ def get_unused_vlans():
             tagged_vmiface_count=0,
             untagged_vmiface_count=0,
         )
-        .select_related('group', 'tenant', 'role')
+        .select_related('_site', 'group', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -99,7 +99,7 @@ def get_vlans_without_group():
     return (
         VLAN.objects
         .filter(group=None)
-        .select_related('tenant', 'role')
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -110,7 +110,7 @@ def get_vlans_without_site_or_group():
     return (
         VLAN.objects
         .filter(group=None)
-        .select_related('tenant', 'role')
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -137,7 +137,7 @@ def suggest_vlan_groups():
     vlans = list(
         VLAN.objects
         .filter(group=None)
-        .select_related('tenant', 'role')
+        .select_related('_site', 'tenant', 'role')
         .order_by('vid')
     )
     if not vlans:
