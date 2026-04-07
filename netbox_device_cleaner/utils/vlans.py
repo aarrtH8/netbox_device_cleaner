@@ -116,6 +116,145 @@ def get_vlans_without_site_or_group():
     )
 
 
+def suggest_vlan_groups():
+    """
+    Analyse les VLANs sans groupe et suggère des VLANGroups basés sur
+    le site des équipements et le tenant du VLAN.
+
+    Nom du groupe : "{site.name} {tenant.name}" (ex. "DC1 SPE").
+
+    Quand un VLAN est sur plusieurs sites, le site majoritaire (le plus
+    de détections) est retenu avec un avertissement dans le résultat.
+
+    Returns:
+        suggestions  : list[dict]  — groupes suggérés triés par nom
+        unassignable : list[dict]  — VLANs sans aucun équipement/site détecté
+    """
+    from ipam.models import VLAN, VLANGroup
+    from dcim.models import Interface
+    from virtualization.models import VMInterface
+    from collections import defaultdict, Counter
+
+    vlans = list(
+        VLAN.objects
+        .filter(group=None)
+        .select_related('site', 'tenant', 'role')
+        .order_by('vid')
+    )
+    if not vlans:
+        return [], []
+
+    vlan_pks  = {v.pk for v in vlans}
+    vlan_map  = {v.pk: v for v in vlans}
+
+    # vlan_pk → Counter{site_pk: count}
+    vlan_site_counts = defaultdict(Counter)
+    # site_pk → Site object
+    site_objs = {}
+
+    def _add_site(vlan_pk, site):
+        if site and vlan_pk in vlan_pks:
+            vlan_site_counts[vlan_pk][site.pk] += 1
+            site_objs[site.pk] = site
+
+    # 1. Site directement sur le VLAN (fort signal)
+    for vlan in vlans:
+        if vlan.site_id:
+            vlan_site_counts[vlan.pk][vlan.site_id] += 3   # poids plus élevé
+            site_objs[vlan.site_id] = vlan.site
+
+    # 2. Interfaces physiques – untagged_vlan
+    for iface in (
+        Interface.objects
+        .filter(untagged_vlan_id__in=vlan_pks, device__site__isnull=False)
+        .select_related('device__site')
+    ):
+        _add_site(iface.untagged_vlan_id, iface.device.site)
+
+    # 3. Interfaces physiques – tagged_vlans (via table M2M)
+    try:
+        tagged_through = Interface.tagged_vlans.through
+        for row in (
+            tagged_through.objects
+            .filter(vlan_id__in=vlan_pks)
+            .select_related('interface__device__site')
+            .filter(interface__device__site__isnull=False)
+        ):
+            _add_site(row.vlan_id, row.interface.device.site)
+    except Exception:
+        pass
+
+    # 4. VMInterfaces – untagged_vlan
+    for vmiface in (
+        VMInterface.objects
+        .filter(untagged_vlan_id__in=vlan_pks)
+        .select_related('virtual_machine__site', 'virtual_machine__cluster__site')
+    ):
+        vm   = vmiface.virtual_machine
+        site = vm.site if vm.site_id else (
+            vm.cluster.site if vm.cluster_id and vm.cluster.site_id else None
+        )
+        _add_site(vmiface.untagged_vlan_id, site)
+
+    # 5. VMInterfaces – tagged_vlans (via table M2M)
+    try:
+        vm_tagged_through = VMInterface.tagged_vlans.through
+        for row in (
+            vm_tagged_through.objects
+            .filter(vlan_id__in=vlan_pks)
+            .select_related('vminterface__virtual_machine__site',
+                            'vminterface__virtual_machine__cluster__site')
+        ):
+            vm   = row.vminterface.virtual_machine
+            site = vm.site if vm.site_id else (
+                vm.cluster.site if vm.cluster_id and vm.cluster.site_id else None
+            )
+            _add_site(row.vlan_id, site)
+    except Exception:
+        pass
+
+    # Construire les suggestions
+    suggestions  = {}   # (site_pk, tenant_pk) → dict
+    unassignable = []   # VLANs sans aucune détection
+
+    for vlan in vlans:
+        counter = vlan_site_counts.get(vlan.pk)
+
+        if not counter:
+            unassignable.append({'vlan': vlan})
+            continue
+
+        # Site majoritaire
+        ranked        = counter.most_common()
+        top_site_pk   = ranked[0][0]
+        site          = site_objs[top_site_pk]
+        other_sites   = [site_objs[pk] for pk, _ in ranked[1:] if pk in site_objs]
+        multi_site    = bool(other_sites)
+
+        tenant = vlan.tenant
+        key    = (site.pk, tenant.pk if tenant else None)
+
+        if key not in suggestions:
+            group_name = f"{site.name} {tenant.name}" if tenant else site.name
+            existing   = VLANGroup.objects.filter(name=group_name).first()
+            suggestions[key] = {
+                'group_name':     group_name,
+                'site':           site,
+                'site_id':        site.pk,
+                'tenant':         tenant,
+                'existing_group': existing,
+                'vlans':          [],
+            }
+        suggestions[key]['vlans'].append({
+            'vlan':        vlan,
+            'multi_site':  multi_site,
+            'other_sites': other_sites,
+        })
+
+    result = sorted(suggestions.values(), key=lambda x: x['group_name'])
+    return result, unassignable
+
+
 def count_all():
     """Comptages rapides pour le dashboard."""
     from ipam.models import VLAN

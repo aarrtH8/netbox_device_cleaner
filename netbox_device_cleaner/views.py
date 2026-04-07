@@ -10,7 +10,7 @@ from django.db.models import Count
 
 from dcim.models import Device, Interface, Site, DeviceRole
 from virtualization.models import VirtualMachine, VMInterface
-from ipam.models import Service, IPAddress, VLAN, Prefix, VRF, Aggregate
+from ipam.models import Service, IPAddress, VLAN, VLANGroup, Prefix, VRF, Aggregate
 from tenancy.models import Tenant
 
 from .utils import vlans as vlan_utils
@@ -120,7 +120,7 @@ class VlanHealthView(View):
         elif tab == 'unused':
             ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_unused_vlans())
         elif tab == 'no_group':
-            ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_vlans_without_group())
+            ctx['suggestions'], ctx['unassignable'] = vlan_utils.suggest_vlan_groups()
         else:
             ctx['page_obj'], ctx['per_page'] = _paginate(request, vlan_utils.get_vlans_without_site_or_group())
         return render(request, self.template_name, ctx)
@@ -128,10 +128,11 @@ class VlanHealthView(View):
     def post(self, request):
         action = request.POST.get('action', '')
         handlers = {
-            'delete_vlan':        self._delete_vlan,
-            'delete_vlans_bulk':  self._delete_vlans_bulk,
-            'merge_vlan':         self._merge_vlan,
-            'delete_unused_bulk': self._delete_unused_bulk,
+            'delete_vlan':           self._delete_vlan,
+            'delete_vlans_bulk':     self._delete_vlans_bulk,
+            'merge_vlan':            self._merge_vlan,
+            'delete_unused_bulk':    self._delete_unused_bulk,
+            'assign_vlans_to_group': self._assign_vlans_to_group,
         }
         if action not in handlers:
             return _json_error(f"Action inconnue : {action}")
@@ -175,6 +176,45 @@ class VlanHealthView(View):
             count = qs.count()
             qs.delete()
         return _json_ok(deleted=count, message=f"{count} VLAN(s) inutilisé(s) supprimé(s).")
+
+    def _assign_vlans_to_group(self, request):
+        from django.utils.text import slugify
+        vlan_ids   = request.POST.getlist('vlan_ids[]')
+        group_name = request.POST.get('group_name', '').strip()
+        site_id    = request.POST.get('site_id')
+
+        if not vlan_ids or not group_name:
+            return _json_error("Paramètres manquants.")
+
+        with transaction.atomic():
+            group = VLANGroup.objects.filter(name=group_name).first()
+            if not group:
+                slug_base = slugify(group_name)
+                slug, n   = slug_base, 1
+                while VLANGroup.objects.filter(slug=slug).exists():
+                    slug = f"{slug_base}-{n}"
+                    n += 1
+                kwargs = {'name': group_name, 'slug': slug}
+                if site_id:
+                    try:
+                        site_ct = ContentType.objects.get_for_model(Site)
+                        kwargs['scope_type'] = site_ct
+                        kwargs['scope_id']   = int(site_id)
+                    except Exception:
+                        pass
+                group = VLANGroup.objects.create(**kwargs)
+                created = True
+            else:
+                created = False
+
+            count = VLAN.objects.filter(pk__in=vlan_ids).update(group=group)
+
+        action = "créé et assigné" if created else "rejoint"
+        logger.info("Groupe VLAN %s (%s), %d VLAN(s) assignés.", group_name, action, count)
+        return _json_ok(
+            message=f"Groupe « {group.name} » {action} — {count} VLAN(s) assigné(s).",
+            group_id=group.pk,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

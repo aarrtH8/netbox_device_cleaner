@@ -140,8 +140,144 @@
   {% endif %}
 {% endif %}
 
-{# ── Tab: Inutilisés, Sans groupe, Globaux ── #}
-{% if tab == 'unused' or tab == 'no_group' or tab == 'no_site_group' %}
+{# ── Tab: Sans groupe ── #}
+{% if tab == 'no_group' %}
+  <div class="alert alert-info py-2 mb-3" style="font-size:.875rem">
+    <i class="mdi mdi-information me-1"></i>
+    Le groupe est suggéré à partir du <strong>site de l'équipement</strong> et du <strong>tenant du VLAN</strong>.
+    Pour chaque groupe, cochez les VLANs à inclure puis cliquez sur le bouton d'assignation.
+  </div>
+
+  {% if suggestions %}
+    {% for suggestion in suggestions %}
+    <div class="card cleaner-card mb-3">
+      <div class="card-header d-flex align-items-center flex-wrap gap-2"
+           style="background:{% if suggestion.existing_group %}rgba(25,135,84,.07){% else %}rgba(13,110,253,.07){% endif %}">
+        <i class="mdi mdi-folder-multiple {% if suggestion.existing_group %}text-success{% else %}text-primary{% endif %} me-1"></i>
+        <strong>{{ suggestion.group_name }}</strong>
+        <span class="text-muted">— {{ suggestion.vlans|length }} VLAN{% if suggestion.vlans|length != 1 %}s{% endif %}</span>
+        {% if suggestion.existing_group %}
+          <span class="badge bg-success">Groupe existant</span>
+        {% else %}
+          <span class="badge bg-primary">À créer</span>
+        {% endif %}
+        <span class="badge bg-secondary">{{ suggestion.site.name }}</span>
+        {% if suggestion.tenant %}<span class="badge bg-warning text-dark">{{ suggestion.tenant.name }}</span>{% endif %}
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm cleaner-table mb-0" id="group-table-{{ forloop.counter }}">
+          <thead>
+            <tr>
+              <th class="check-col">
+                <input type="checkbox" checked
+                       onchange="toggleGroupAll(this, {{ forloop.counter }})">
+              </th>
+              <th>VID</th>
+              <th>Nom</th>
+              <th>Statut</th>
+              <th>Tenant</th>
+              <th>Rôle</th>
+              <th>Sites détectés</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in suggestion.vlans %}
+            <tr id="vlan-row-{{ item.vlan.pk }}">
+              <td>
+                <input type="checkbox" class="group-cb group-cb-{{ forloop.parentloop.counter }}"
+                       value="{{ item.vlan.pk }}" checked>
+              </td>
+              <td><strong>{{ item.vlan.vid }}</strong></td>
+              <td>{{ item.vlan.name }}</td>
+              <td>
+                <span class="badge bg-{% if item.vlan.status == 'active' %}success{% elif item.vlan.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                  {{ item.vlan.get_status_display }}
+                </span>
+              </td>
+              <td>{{ item.vlan.tenant|default:'—' }}</td>
+              <td>{{ item.vlan.role|default:'—' }}</td>
+              <td>
+                <span class="badge bg-secondary me-1">{{ suggestion.site.name }}</span>
+                {% if item.multi_site %}
+                  {% for s in item.other_sites %}
+                    <span class="badge bg-light text-dark border me-1" title="Site minoritaire">{{ s.name }}</span>
+                  {% endfor %}
+                  <i class="mdi mdi-alert-outline text-warning" title="Plusieurs sites détectés — site majoritaire retenu"></i>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex gap-2 align-items-center flex-wrap">
+        {% if suggestion.existing_group %}
+          <button class="btn btn-sm btn-success"
+                  onclick="assignVlansToGroup({{ forloop.counter }}, '{{ suggestion.group_name|escapejs }}', {{ suggestion.site_id }}, false)">
+            <i class="mdi mdi-folder-plus me-1"></i>Rejoindre « {{ suggestion.group_name }} » (sélection)
+          </button>
+          <button class="btn btn-sm btn-outline-success"
+                  onclick="assignAllVlansToGroup({{ forloop.counter }}, '{{ suggestion.group_name|escapejs }}', {{ suggestion.site_id }}, false)">
+            <i class="mdi mdi-folder-multiple-plus me-1"></i>Rejoindre tout le tableau
+          </button>
+        {% else %}
+          <button class="btn btn-sm btn-primary"
+                  onclick="assignVlansToGroup({{ forloop.counter }}, '{{ suggestion.group_name|escapejs }}', {{ suggestion.site_id }}, true)">
+            <i class="mdi mdi-folder-plus me-1"></i>Créer « {{ suggestion.group_name }} » (sélection)
+          </button>
+          <button class="btn btn-sm btn-outline-primary"
+                  onclick="assignAllVlansToGroup({{ forloop.counter }}, '{{ suggestion.group_name|escapejs }}', {{ suggestion.site_id }}, true)">
+            <i class="mdi mdi-folder-multiple-plus me-1"></i>Créer et assigner tout le tableau
+          </button>
+        {% endif %}
+        <small class="text-muted ms-auto">Décocher les VLANs à exclure avant d'assigner.</small>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if unassignable %}
+  <div class="card cleaner-card mb-3 border-warning">
+    <div class="card-header d-flex align-items-center" style="background:rgba(255,193,7,.08)">
+      <i class="mdi mdi-help-circle text-warning me-2"></i>
+      <strong>Aucun équipement trouvé</strong>
+      <span class="ms-2 text-muted">— {{ unassignable|length }} VLAN{% if unassignable|length != 1 %}s{% endif %} sans site détectable</span>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-sm cleaner-table mb-0">
+        <thead>
+          <tr>
+            <th>VID</th><th>Nom</th><th>Tenant</th><th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in unassignable %}
+          <tr>
+            <td><strong>{{ item.vlan.vid }}</strong></td>
+            <td>{{ item.vlan.name }}</td>
+            <td>{{ item.vlan.tenant|default:'—' }}</td>
+            <td>
+              <span class="badge bg-{% if item.vlan.status == 'active' %}success{% elif item.vlan.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
+                {{ item.vlan.get_status_display }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not suggestions and not unassignable %}
+    <div class="alert alert-success">
+      <i class="mdi mdi-check-circle me-2"></i>Tous les VLANs sont rattachés à un groupe.
+    </div>
+  {% endif %}
+{% endif %}
+
+{# ── Tab: Inutilisés & Globaux ── #}
+{% if tab == 'unused' or tab == 'no_site_group' %}
   {% if page_obj and page_obj.object_list %}
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div class="input-group" style="max-width:320px">
@@ -152,8 +288,7 @@
       </div>
       <div class="d-flex gap-2">
         {% if tab == 'unused' %}
-        <button class="btn btn-sm btn-danger"
-                onclick="confirmDeleteAllUnused()">
+        <button class="btn btn-sm btn-danger" onclick="confirmDeleteAllUnused()">
           <i class="mdi mdi-delete-sweep me-1"></i>Supprimer tous les VLANs inutilisés
         </button>
         {% endif %}
@@ -169,17 +304,9 @@
         <table class="table table-sm cleaner-table mb-0" id="vlanTable">
           <thead>
             <tr>
-              <th class="check-col">
-                <input type="checkbox" id="checkAll">
-              </th>
-              <th>VID</th>
-              <th>Nom</th>
-              <th>Statut</th>
-              <th>Site</th>
-              <th>Groupe</th>
-              <th>Tenant</th>
-              <th>Rôle</th>
-              <th>Actions</th>
+              <th class="check-col"><input type="checkbox" id="checkAll"></th>
+              <th>VID</th><th>Nom</th><th>Statut</th>
+              <th>Site</th><th>Groupe</th><th>Tenant</th><th>Rôle</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -312,6 +439,53 @@ async function mergeVlans(vid, idx) {
     }
   } catch(e) { showToast('Erreur réseau', 'danger'); }
   finally { btnLoading(btn, false); }
+}
+
+function toggleGroupAll(masterCb, idx) {
+  document.querySelectorAll(`.group-cb-${idx}`).forEach(cb => cb.checked = masterCb.checked);
+}
+
+async function _doAssignGroup(vlanIds, groupName, siteId, createNew) {
+  if (!vlanIds.length) { showToast("Aucun VLAN sélectionné.", 'warning'); return false; }
+  const verb = createNew ? `Créer le groupe « ${groupName} » et assigner ${vlanIds.length} VLAN(s) ?`
+                         : `Assigner ${vlanIds.length} VLAN(s) au groupe existant « ${groupName} » ?`;
+  if (!confirm(verb)) return false;
+
+  const body = new URLSearchParams({
+    csrfmiddlewaretoken: getCsrf(),
+    action: 'assign_vlans_to_group',
+    group_name: groupName,
+    site_id: siteId,
+  });
+  vlanIds.forEach(id => body.append('vlan_ids[]', id));
+
+  const r    = await fetch(VLANS_URL, { method: 'POST', body });
+  const data = await r.json();
+  if (data.success) {
+    showToast(data.message, 'success');
+    setTimeout(() => location.reload(), 1500);
+    return true;
+  }
+  showToast(data.error, 'danger');
+  return false;
+}
+
+async function assignVlansToGroup(idx, groupName, siteId, createNew) {
+  const btn    = event.target.closest('button');
+  const ids    = Array.from(document.querySelectorAll(`.group-cb-${idx}:checked`)).map(cb => cb.value);
+  btnLoading(btn, true);
+  try { await _doAssignGroup(ids, groupName, siteId, createNew); }
+  catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally  { btnLoading(btn, false); }
+}
+
+async function assignAllVlansToGroup(idx, groupName, siteId, createNew) {
+  const btn = event.target.closest('button');
+  const ids = Array.from(document.querySelectorAll(`.group-cb-${idx}`)).map(cb => cb.value);
+  btnLoading(btn, true);
+  try { await _doAssignGroup(ids, groupName, siteId, createNew); }
+  catch(e) { showToast('Erreur réseau', 'danger'); }
+  finally  { btnLoading(btn, false); }
 }
 </script>
 {% endblock %}
