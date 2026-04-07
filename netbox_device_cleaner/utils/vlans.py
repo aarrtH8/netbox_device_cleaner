@@ -7,37 +7,25 @@ def _is_genuine_duplicate_group(vlans):
     Détermine si un groupe de VLANs partageant le même VID est un vrai doublon.
 
     Règles :
-    1. Même tenant (ou au moins un VLAN sans tenant) → doublon.
-    2. Tenants tous différents et tous renseignés :
-       - Au moins un VLAN sans préfixe associé → doublon (prudence).
-       - Deux VLANs partagent un même préfixe réseau → doublon.
-       - Tous ont des préfixes distincts → PAS un doublon (VLANs tenant-isolés).
+    - Au moins un VLAN sans tenant → doublon (tenant non renseigné = cas ambigu).
+    - Tous les tenants renseignés et tous différents → PAS un doublon (isolation par tenant).
+    - Deux VLANs ou plus partagent le même tenant → doublon.
     """
     if len(vlans) <= 1:
         return False
 
     tenant_ids = [v.tenant_id for v in vlans]
 
-    # Règle 1 : tenant absent ou partagé → doublon
-    if None in tenant_ids or len(set(tenant_ids)) < len(tenant_ids):
+    # Au moins un tenant absent → doublon
+    if None in tenant_ids:
         return True
 
-    # Règle 2 : tenants tous différents → vérifier les préfixes (une seule passe)
-    prefix_sets = []
-    for vlan in vlans:
-        prefixes = list(vlan.prefixes.all())  # utilise le prefetch_related si actif
-        if not prefixes:
-            return True
-        prefix_sets.append(set(str(p.prefix) for p in prefixes))
+    # Tous différents → tenant-isolés, pas de problème
+    if len(set(tenant_ids)) == len(tenant_ids):
+        return False
 
-    for i in range(len(prefix_sets)):
-        for j in range(i + 1, len(prefix_sets)):
-            if prefix_sets[i] & prefix_sets[j]:
-                # Réseau partagé entre deux tenants différents → doublon
-                return True
-
-    # Tenants différents, réseaux différents → VLANs tenant-isolés, pas de problème
-    return False
+    # Certains tenants sont partagés → doublon
+    return True
 
 
 def get_duplicate_vids():
@@ -65,7 +53,6 @@ def get_duplicate_vlan_detail():
             VLAN.objects
             .filter(vid=vid, group_id=group_id, site_id=site_id)
             .select_related('site', 'group', 'tenant', 'role')
-            .prefetch_related('prefixes')
         )
         if not _is_genuine_duplicate_group(vlans):
             continue
