@@ -60,7 +60,7 @@ def _paginate(request, qs_or_list, default_per_page=50):
     if per_page not in _VALID_PER_PAGE:
         per_page = default_per_page
     paginator = Paginator(qs_or_list, per_page)
-    page_obj = paginator.get_page(request.GET.get('page', 1))
+    page_obj = paginator.get_page(request.GET.get('page') or 1)
     return page_obj, per_page
 
 
