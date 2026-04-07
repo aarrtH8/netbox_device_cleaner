@@ -22,18 +22,14 @@ def _is_genuine_duplicate_group(vlans):
     if None in tenant_ids or len(set(tenant_ids)) < len(tenant_ids):
         return True
 
-    # Règle 2 : tenants tous différents → vérifier les préfixes
+    # Règle 2 : tenants tous différents → vérifier les préfixes (une seule passe)
+    prefix_sets = []
     for vlan in vlans:
-        prefixes = list(vlan.prefixes.all())
+        prefixes = list(vlan.prefixes.all())  # utilise le prefetch_related si actif
         if not prefixes:
-            # Pas de réseau associé : impossible de confirmer l'isolement
             return True
+        prefix_sets.append(set(str(p.prefix) for p in prefixes))
 
-    # Comparer les préfixes deux à deux
-    prefix_sets = [
-        set(str(p.prefix) for p in vlan.prefixes.all())
-        for vlan in vlans
-    ]
     for i in range(len(prefix_sets)):
         for j in range(i + 1, len(prefix_sets)):
             if prefix_sets[i] & prefix_sets[j]:
@@ -168,6 +164,8 @@ def merge_vlans(keep_pk, delete_pks):
     keep = VLAN.objects.get(pk=keep_pk)
     with transaction.atomic():
         for pk in delete_pks:
+            if not pk:
+                continue
             if int(pk) == int(keep_pk):
                 continue
             victim = VLAN.objects.get(pk=pk)

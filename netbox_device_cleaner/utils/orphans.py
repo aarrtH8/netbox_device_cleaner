@@ -5,21 +5,23 @@ from django.db.models import Count, Q
 def get_orphan_services():
     """
     Services dont le parent (Device ou VM) n'existe plus.
-    Utilise des sous-requêtes anti-join sur les FK directes device/virtual_machine.
+    Utilise des Exists subqueries pour éviter les race conditions liées à l'évaluation
+    tardive des querysets dans __in.
     """
     from ipam.models import Service
     from dcim.models import Device
     from virtualization.models import VirtualMachine
+    from django.db.models import Exists, OuterRef
 
-    device_ids = Device.objects.values_list('pk', flat=True)
-    vm_ids = VirtualMachine.objects.values_list('pk', flat=True)
+    device_exists = Device.objects.filter(pk=OuterRef('device_id'))
+    vm_exists = VirtualMachine.objects.filter(pk=OuterRef('virtual_machine_id'))
 
     return (
         Service.objects
         .filter(
-            Q(device__isnull=False) & ~Q(device_id__in=device_ids)
+            Q(device__isnull=False) & ~Exists(device_exists)
             |
-            Q(virtual_machine__isnull=False) & ~Q(virtual_machine_id__in=vm_ids)
+            Q(virtual_machine__isnull=False) & ~Exists(vm_exists)
         )
         .select_related('device', 'virtual_machine')
         .order_by('name')

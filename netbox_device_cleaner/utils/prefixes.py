@@ -23,7 +23,8 @@ def get_overlapping_prefixes():
         )
         return qs
     except Exception:
-        return type('EmptyQS', (), {'count': lambda s: 0, '__iter__': lambda s: iter([])})()
+        from ipam.models import Prefix as _Prefix
+        return _Prefix.objects.none()
 
 
 def get_unused_prefixes():
@@ -53,7 +54,8 @@ def get_unused_prefixes():
             .order_by('prefix')
         )
     except Exception:
-        return type('EmptyQS', (), {'count': lambda s: 0, '__iter__': lambda s: iter([])})()
+        from ipam.models import Prefix as _Prefix
+        return _Prefix.objects.none()
 
 
 def get_prefixes_without_vrf():

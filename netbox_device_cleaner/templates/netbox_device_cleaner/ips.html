@@ -166,25 +166,7 @@
       </div>
     </div>
 
-    {% if page_obj.has_other_pages %}
-    <nav class="mt-3">
-      <ul class="pagination pagination-sm justify-content-center">
-        {% if page_obj.has_previous %}
-          <li class="page-item">
-            <a class="page-link" href="?tab=orphans&page={{ page_obj.previous_page_number }}">‹</a>
-          </li>
-        {% endif %}
-        <li class="page-item disabled">
-          <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
-        </li>
-        {% if page_obj.has_next %}
-          <li class="page-item">
-            <a class="page-link" href="?tab=orphans&page={{ page_obj.next_page_number }}">›</a>
-          </li>
-        {% endif %}
-      </ul>
-    </nav>
-    {% endif %}
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Aucune adresse IP orpheline.
@@ -194,13 +176,7 @@
 
 {# ── Onglet : IPs hors préfixe ── #}
 {% if tab == 'outside_prefix' %}
-  {% if truncated %}
-  <div class="alert alert-warning">
-    <i class="mdi mdi-alert me-2"></i>
-    <strong>Résultats tronqués</strong> : {{ total }} IPs hors préfixe détectées, affichage limité à 500.
-  </div>
-  {% endif %}
-  {% if ips %}
+  {% if page_obj and page_obj.object_list %}
     <div class="alert alert-info mb-3">
       <i class="mdi mdi-information me-2"></i>
       Ces adresses n'appartiennent à aucun préfixe défini dans NetBox. Vérifiez si elles sont intentionnelles avant de les supprimer.
@@ -221,7 +197,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for ip in ips %}
+            {% for ip in page_obj %}
             <tr id="ip-row-{{ ip.pk }}">
               <td><input type="checkbox" class="row-check" value="{{ ip.pk }}"></td>
               <td><strong>{{ ip.address }}</strong></td>
@@ -249,6 +225,7 @@
         </table>
       </div>
     </div>
+    {% include 'netbox_device_cleaner/_pagination.html' %}
   {% else %}
     <div class="alert alert-success">
       <i class="mdi mdi-check-circle me-2"></i>Toutes les IPs appartiennent à un préfixe défini.
