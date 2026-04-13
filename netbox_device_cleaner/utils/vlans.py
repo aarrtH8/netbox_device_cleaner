@@ -6,26 +6,47 @@ def _conflict_type(vlans):
     """
     Retourne le type de conflit pour un groupe de VLANs, ou None si aucun conflit.
 
-    - 'tenant' : au moins un VLAN sans tenant, ou deux VLANs partagent le même tenant.
-    - 'ip'     : tenants tous différents et renseignés, mais deux VLANs partagent un préfixe.
-    - None     : tenants différents, préfixes distincts → VLANs tenant-isolés légitimes.
+    Règles par paire :
+    - Tenant absent sur l'un → 'tenant' (impossible de déterminer l'isolation).
+    - Même tenant + pas de préfixes ou préfixes qui se chevauchent → 'tenant'.
+    - Même tenant + préfixes distincts non-chevauchants → pas de conflit (VLANs légitimes).
+    - Tenants différents + préfixes qui se chevauchent → 'ip' (conflit réseau).
+    - Tenants différents + préfixes distincts → pas de conflit.
     """
     if len(vlans) <= 1:
         return None
 
     tenant_ids = [v.tenant_id for v in vlans]
 
-    if None in tenant_ids or len(set(tenant_ids)) < len(tenant_ids):
+    # Tenant absent sur au moins un VLAN → ambiguïté → doublon
+    if None in tenant_ids:
         return 'tenant'
 
-    # Tenants tous différents → vérifier les conflits IP
-    prefix_sets = [set(str(p.prefix) for p in vlan.prefixes.all()) for vlan in vlans]
-    for i in range(len(prefix_sets)):
-        for j in range(i + 1, len(prefix_sets)):
-            if prefix_sets[i] & prefix_sets[j]:
-                return 'ip'
+    # Construire les ensembles de préfixes pour chaque VLAN (prefetch_related actif)
+    prefix_sets = [set(str(p.prefix) for p in v.prefixes.all()) for v in vlans]
 
-    return None
+    ip_conflict = False
+
+    for i in range(len(vlans)):
+        for j in range(i + 1, len(vlans)):
+            same_tenant = (vlans[i].tenant_id == vlans[j].tenant_id)
+            pi, pj     = prefix_sets[i], prefix_sets[j]
+
+            if same_tenant:
+                # Même tenant sans préfixes renseignés → impossible de prouver l'isolation
+                if not pi or not pj:
+                    return 'tenant'
+                # Même tenant, préfixes qui se chevauchent → vrai doublon
+                if pi & pj:
+                    return 'tenant'
+                # Même tenant, préfixes distincts → isolation par plage IP, pas un doublon
+
+            else:
+                # Tenants différents : conflit uniquement si la plage IP se chevauche
+                if pi & pj:
+                    ip_conflict = True
+
+    return 'ip' if ip_conflict else None
 
 
 def _is_genuine_duplicate_group(vlans):
@@ -56,7 +77,7 @@ def get_duplicate_vlan_detail():
         vlans = list(
             VLAN.objects
             .filter(vid=vid, group_id=group_id)
-            .select_related('site', 'group', 'tenant', 'role')
+            .select_related('group', 'tenant', 'role')
             .prefetch_related('prefixes')
         )
         ctype = _conflict_type(vlans)
@@ -88,7 +109,7 @@ def get_unused_vlans():
             tagged_vmiface_count=0,
             untagged_vmiface_count=0,
         )
-        .select_related('site', 'group', 'tenant', 'role')
+        .select_related('group', 'tenant', 'role')
         .order_by('vid')
     )
 
@@ -99,7 +120,7 @@ def get_vlans_without_group():
     return (
         VLAN.objects
         .filter(group=None)
-        .select_related('site', 'tenant', 'role')
+        .select_related('tenant', 'role')
         .order_by('vid')
     )
 
@@ -110,7 +131,7 @@ def get_vlans_without_site_or_group():
     return (
         VLAN.objects
         .filter(site=None, group=None)
-        .select_related('site', 'tenant', 'role')
+        .select_related('tenant', 'role')
         .order_by('vid')
     )
 
@@ -137,7 +158,7 @@ def suggest_vlan_groups():
     vlans = list(
         VLAN.objects
         .filter(group=None)
-        .select_related('site', 'tenant', 'role')
+        .select_related('tenant', 'role')
         .order_by('vid')
     )
     if not vlans:
