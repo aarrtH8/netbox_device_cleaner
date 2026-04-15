@@ -136,15 +136,30 @@ def get_vlans_without_site_or_group():
     )
 
 
+def _extract_site_trigram(device_name):
+    """
+    Extrait le trigramme de site depuis le nom d'un équipement.
+
+    Convention attendue : [PREFIX(3)][SITE(3)][TENANT(3)][ROLE(3)][NUM(2)][ENV(1)]
+    Exemple : THSDC1SPEFWL03P  →  DC1
+
+    Retourne None si le nom est trop court pour extraire le trigramme.
+    """
+    if device_name and len(device_name) >= 6:
+        return device_name[3:6].upper()
+    return None
+
+
 def suggest_vlan_groups():
     """
     Analyse les VLANs sans groupe et suggère des VLANGroups basés sur
-    le site des équipements et le tenant du VLAN.
+    le trigramme de site extrait du nom des équipements et le tenant du VLAN.
 
-    Nom du groupe : "{site.name} {tenant.name}" (ex. "DC1 SPE").
+    Nom du groupe : "{trigram} {tenant.name}" (ex. "DC1 SPE").
+    Le trigramme est extrait à la position [3:6] du nom d'équipement.
 
-    Quand un VLAN est sur plusieurs sites, le site majoritaire (le plus
-    de détections) est retenu avec un avertissement dans le résultat.
+    Quand un VLAN est détecté sur plusieurs trigrammes différents, le
+    trigramme majoritaire est retenu avec un avertissement visuel.
 
     Returns:
         suggestions  : list[dict]  — groupes suggérés triés par nom
@@ -164,21 +179,26 @@ def suggest_vlan_groups():
     if not vlans:
         return [], []
 
-    vlan_pks  = {v.pk for v in vlans}
-    vlan_map  = {v.pk: v for v in vlans}
+    vlan_pks = {v.pk for v in vlans}
 
-    # vlan_pk → Counter{site_pk: count}
-    vlan_site_counts = defaultdict(Counter)
-    # site_pk → Site object
-    site_objs = {}
+    # vlan_pk → Counter{trigram: count}
+    vlan_trigram_counts = defaultdict(Counter)
+    # trigram → premier Site object rencontré (pour le scope du groupe)
+    trigram_site = {}
 
-    def _add_site(vlan_pk, site):
-        if site and vlan_pk in vlan_pks:
-            vlan_site_counts[vlan_pk][site.pk] += 1
-            site_objs[site.pk] = site
+    def _add_device(vlan_pk, site, device_name):
+        if not site or vlan_pk not in vlan_pks:
+            return
+        trigram = _extract_site_trigram(device_name)
+        if not trigram:
+            # Fallback : utiliser le début du nom de site
+            trigram = site.name[:6].upper()
+        vlan_trigram_counts[vlan_pk][trigram] += 1
+        if trigram not in trigram_site:
+            trigram_site[trigram] = site
 
     # NetBox 4.4.6 : VLAN n'a plus de champ site direct.
-    # Le site est détecté uniquement via les interfaces des équipements associés.
+    # Le site et le trigramme sont détectés via les interfaces des équipements.
 
     # 1. Interfaces physiques – untagged_vlan
     for iface in (
@@ -186,7 +206,7 @@ def suggest_vlan_groups():
         .filter(untagged_vlan_id__in=vlan_pks, device__site__isnull=False)
         .select_related('device__site')
     ):
-        _add_site(iface.untagged_vlan_id, iface.device.site)
+        _add_device(iface.untagged_vlan_id, iface.device.site, iface.device.name)
 
     # 2. Interfaces physiques – tagged_vlans (via table M2M)
     try:
@@ -197,13 +217,15 @@ def suggest_vlan_groups():
             .select_related('interface__device__site')
             .filter(interface__device__site__isnull=False)
         ):
-            _add_site(row.vlan_id, row.interface.device.site)
+            _add_device(
+                row.vlan_id,
+                row.interface.device.site,
+                row.interface.device.name,
+            )
     except Exception:
         pass
 
     # 3. VMInterfaces – untagged_vlan
-    # Note : pas de select_related sur virtual_machine__site car en NetBox 4.x
-    # VirtualMachine utilise un site scope-based (_site) sans FK directe 'site'.
     for vmiface in (
         VMInterface.objects
         .filter(untagged_vlan_id__in=vlan_pks)
@@ -214,7 +236,7 @@ def suggest_vlan_groups():
             site = vm.site
         except Exception:
             site = None
-        _add_site(vmiface.untagged_vlan_id, site)
+        _add_device(vmiface.untagged_vlan_id, site, vm.name)
 
     # 4. VMInterfaces – tagged_vlans (via table M2M)
     try:
@@ -229,36 +251,37 @@ def suggest_vlan_groups():
                 site = vm.site
             except Exception:
                 site = None
-            _add_site(row.vlan_id, site)
+            _add_device(row.vlan_id, site, vm.name)
     except Exception:
         pass
 
     # Construire les suggestions
-    suggestions  = {}   # (site_pk, tenant_pk) → dict
+    suggestions  = {}   # (trigram, tenant_pk) → dict
     unassignable = []   # VLANs sans aucune détection
 
     for vlan in vlans:
-        counter = vlan_site_counts.get(vlan.pk)
+        counter = vlan_trigram_counts.get(vlan.pk)
 
         if not counter:
             unassignable.append({'vlan': vlan})
             continue
 
-        # Site majoritaire
-        ranked        = counter.most_common()
-        top_site_pk   = ranked[0][0]
-        site          = site_objs[top_site_pk]
-        other_sites   = [site_objs[pk] for pk, _ in ranked[1:] if pk in site_objs]
-        multi_site    = bool(other_sites)
+        # Trigramme majoritaire
+        ranked          = counter.most_common()
+        top_trigram     = ranked[0][0]
+        site            = trigram_site[top_trigram]
+        other_trigrams  = [t for t, _ in ranked[1:] if t != top_trigram]
+        multi_site      = bool(other_trigrams)
 
         tenant = vlan.tenant
-        key    = (site.pk, tenant.pk if tenant else None)
+        key    = (top_trigram, tenant.pk if tenant else None)
 
         if key not in suggestions:
-            group_name = f"{site.name} {tenant.name}" if tenant else site.name
+            group_name = f"{top_trigram} {tenant.name}" if tenant else top_trigram
             existing   = VLANGroup.objects.filter(name=group_name).first()
             suggestions[key] = {
                 'group_name':     group_name,
+                'site_trigram':   top_trigram,
                 'site':           site,
                 'site_id':        site.pk,
                 'tenant':         tenant,
@@ -266,9 +289,9 @@ def suggest_vlan_groups():
                 'vlans':          [],
             }
         suggestions[key]['vlans'].append({
-            'vlan':        vlan,
-            'multi_site':  multi_site,
-            'other_sites': other_sites,
+            'vlan':           vlan,
+            'multi_site':     multi_site,
+            'other_trigrams': other_trigrams,
         })
 
     result = sorted(suggestions.values(), key=lambda x: x['group_name'])
