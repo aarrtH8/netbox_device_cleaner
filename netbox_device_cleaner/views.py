@@ -207,15 +207,24 @@ class VlanHealthView(View):
             else:
                 created = False
 
-            # Exclure les VLANs dont le nom existe déjà dans le groupe cible
-            # pour éviter la violation de la contrainte unique (group_id, name).
-            taken_names = set(
+            # Contrainte unique (group_id, name) : on itère les VLANs du batch
+            # en gardant trace des noms déjà vus (groupe existant + doublons
+            # internes au batch lui-même, ex : 2 VLANs group=None, même nom).
+            seen_names = set(
                 VLAN.objects.filter(group=group).values_list('name', flat=True)
             )
-            qs_all     = VLAN.objects.filter(pk__in=vlan_ids)
-            qs_safe    = qs_all.exclude(name__in=taken_names)
-            skipped    = qs_all.count() - qs_safe.count()
-            count      = qs_safe.update(group=group)
+            safe_pks = []
+            for pk, name in (
+                VLAN.objects
+                .filter(pk__in=vlan_ids)
+                .values_list('pk', 'name')
+                .order_by('pk')
+            ):
+                if name not in seen_names:
+                    seen_names.add(name)
+                    safe_pks.append(pk)
+            skipped = len(vlan_ids) - len(safe_pks)
+            count   = VLAN.objects.filter(pk__in=safe_pks).update(group=group)
 
         action = "créé et assigné" if created else "rejoint"
         logger.info(

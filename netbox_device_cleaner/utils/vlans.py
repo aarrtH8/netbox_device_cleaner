@@ -295,20 +295,26 @@ def suggest_vlan_groups():
             'name_conflict':  False,   # rempli ci-dessous pour les groupes existants
         })
 
-    # Détecter les conflits de noms pour les groupes déjà existants.
-    # Contrainte NetBox : (group_id, name) doit être unique → on marque les VLANs
-    # dont le nom est déjà utilisé dans le groupe cible afin de les exclure de
-    # l'assignation et de les signaler visuellement dans l'interface.
+    # Détecter les conflits de noms — deux cas :
+    # 1. Nom déjà présent dans le groupe cible existant (groupe existant)
+    # 2. Doublon de nom au sein du même batch : même nom, VIDs différents
+    #    (ex : vid=3400 et vid=3406, tous deux group=None, même nom)
+    #    → le 2ème serait refusé par la contrainte unique (group_id, name).
     for suggestion in suggestions.values():
-        if not suggestion['existing_group']:
-            continue
-        taken = set(
-            VLAN.objects
-            .filter(group=suggestion['existing_group'])
-            .values_list('name', flat=True)
-        )
+        taken = set()
+        if suggestion['existing_group']:
+            taken = set(
+                VLAN.objects
+                .filter(group=suggestion['existing_group'])
+                .values_list('name', flat=True)
+            )
+        seen_in_batch = set()
         for item in suggestion['vlans']:
-            item['name_conflict'] = item['vlan'].name in taken
+            name = item['vlan'].name
+            if name in taken or name in seen_in_batch:
+                item['name_conflict'] = True
+            else:
+                seen_in_batch.add(name)
 
     result = sorted(suggestions.values(), key=lambda x: x['group_name'])
     return result, unassignable
