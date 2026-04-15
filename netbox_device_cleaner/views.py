@@ -207,14 +207,25 @@ class VlanHealthView(View):
             else:
                 created = False
 
-            count = VLAN.objects.filter(pk__in=vlan_ids).update(group=group)
+            # Exclure les VLANs dont le nom existe déjà dans le groupe cible
+            # pour éviter la violation de la contrainte unique (group_id, name).
+            taken_names = set(
+                VLAN.objects.filter(group=group).values_list('name', flat=True)
+            )
+            qs_all     = VLAN.objects.filter(pk__in=vlan_ids)
+            qs_safe    = qs_all.exclude(name__in=taken_names)
+            skipped    = qs_all.count() - qs_safe.count()
+            count      = qs_safe.update(group=group)
 
         action = "créé et assigné" if created else "rejoint"
-        logger.info("Groupe VLAN %s (%s), %d VLAN(s) assignés.", group_name, action, count)
-        return _json_ok(
-            message=f"Groupe « {group.name} » {action} — {count} VLAN(s) assigné(s).",
-            group_id=group.pk,
+        logger.info(
+            "Groupe VLAN %s (%s), %d VLAN(s) assignés, %d ignorés (conflit nom).",
+            group_name, action, count, skipped,
         )
+        msg = f"Groupe « {group.name} » {action} — {count} VLAN(s) assigné(s)."
+        if skipped:
+            msg += f" {skipped} VLAN(s) ignoré(s) : nom déjà présent dans le groupe."
+        return _json_ok(message=msg, group_id=group.pk, skipped=skipped)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -183,13 +183,21 @@
           </thead>
           <tbody>
             {% for item in suggestion.vlans %}
-            <tr id="vlan-row-{{ item.vlan.pk }}">
+            <tr id="vlan-row-{{ item.vlan.pk }}"{% if item.name_conflict %} class="table-warning opacity-75"{% endif %}>
               <td>
                 <input type="checkbox" class="group-cb group-cb-{{ forloop.parentloop.counter }}"
-                       value="{{ item.vlan.pk }}" checked>
+                       value="{{ item.vlan.pk }}"
+                       {% if item.name_conflict %}disabled title="Nom déjà présent dans le groupe — ce VLAN sera ignoré"{% else %}checked{% endif %}>
               </td>
               <td><strong>{{ item.vlan.vid }}</strong></td>
-              <td>{{ item.vlan.name }}</td>
+              <td>
+                {{ item.vlan.name }}
+                {% if item.name_conflict %}
+                  <span class="badge bg-danger ms-1" title="Un VLAN portant ce nom existe déjà dans le groupe « {{ suggestion.group_name }} »">
+                    <i class="mdi mdi-alert me-1"></i>Conflit nom
+                  </span>
+                {% endif %}
+              </td>
               <td>
                 <span class="badge bg-{% if item.vlan.status == 'active' %}success{% elif item.vlan.status == 'reserved' %}warning text-dark{% else %}secondary{% endif %}">
                   {{ item.vlan.get_status_display }}
