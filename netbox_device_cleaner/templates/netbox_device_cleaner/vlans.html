@@ -178,6 +178,7 @@
               <th>Tenant</th>
               <th>Rôle</th>
               <th>Sites détectés</th>
+              <th>Groupe</th>
             </tr>
           </thead>
           <tbody>
@@ -197,12 +198,23 @@
               <td>{{ item.vlan.tenant|default:'—' }}</td>
               <td>{{ item.vlan.role|default:'—' }}</td>
               <td>
-                <span class="badge bg-secondary me-1">{{ suggestion.site.name }}</span>
+                <span class="badge bg-info text-dark me-1">{{ suggestion.site.name }}</span>
                 {% if item.multi_site %}
                   {% for s in item.other_sites %}
                     <span class="badge bg-light text-dark border me-1" title="Site minoritaire">{{ s.name }}</span>
                   {% endfor %}
                   <i class="mdi mdi-alert-outline text-warning" title="Plusieurs sites détectés — site majoritaire retenu"></i>
+                {% endif %}
+              </td>
+              <td>
+                {% if suggestion.existing_group %}
+                  <span class="badge bg-success" title="Groupe déjà existant dans NetBox">
+                    <i class="mdi mdi-folder-check me-1"></i>{{ suggestion.group_name }}
+                  </span>
+                {% else %}
+                  <span class="badge bg-primary" title="Ce groupe sera créé">
+                    <i class="mdi mdi-folder-plus me-1"></i>{{ suggestion.group_name }}
+                  </span>
                 {% endif %}
               </td>
             </tr>
