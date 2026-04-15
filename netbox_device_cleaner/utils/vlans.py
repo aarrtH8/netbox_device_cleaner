@@ -93,7 +93,10 @@ def get_duplicate_vlan_detail():
 
 
 def get_unused_vlans():
-    """VLANs sans aucune interface physique ni VM (tagged ou untagged)."""
+    """
+    VLANs sans aucune interface physique ni VM (tagged ou untagged)
+    et sans aucun préfixe associé.
+    """
     from ipam.models import VLAN
     return (
         VLAN.objects
@@ -102,12 +105,14 @@ def get_unused_vlans():
             untagged_iface_count=Count('interfaces_as_untagged', distinct=True),
             tagged_vmiface_count=Count('vminterfaces_as_tagged', distinct=True),
             untagged_vmiface_count=Count('vminterfaces_as_untagged', distinct=True),
+            prefix_count=Count('prefixes', distinct=True),
         )
         .filter(
             tagged_iface_count=0,
             untagged_iface_count=0,
             tagged_vmiface_count=0,
             untagged_vmiface_count=0,
+            prefix_count=0,
         )
         .select_related('group', 'tenant')
         .order_by('vid')
@@ -334,8 +339,9 @@ def count_all():
             uc=Count('interfaces_as_untagged', distinct=True),
             tvc=Count('vminterfaces_as_tagged', distinct=True),
             uvc=Count('vminterfaces_as_untagged', distinct=True),
+            pc=Count('prefixes', distinct=True),
         )
-        .filter(tc=0, uc=0, tvc=0, uvc=0)
+        .filter(tc=0, uc=0, tvc=0, uvc=0, pc=0)
         .count()
     )
     no_group = VLAN.objects.filter(group=None).count()
