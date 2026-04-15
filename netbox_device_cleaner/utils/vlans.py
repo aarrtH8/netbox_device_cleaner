@@ -202,15 +202,18 @@ def suggest_vlan_groups():
         pass
 
     # 3. VMInterfaces – untagged_vlan
+    # Note : pas de select_related sur virtual_machine__site car en NetBox 4.x
+    # VirtualMachine utilise un site scope-based (_site) sans FK directe 'site'.
     for vmiface in (
         VMInterface.objects
         .filter(untagged_vlan_id__in=vlan_pks)
-        .select_related('virtual_machine__site', 'virtual_machine__cluster__site')
+        .select_related('virtual_machine')
     ):
-        vm   = vmiface.virtual_machine
-        site = vm.site if vm.site_id else (
-            vm.cluster.site if vm.cluster_id and vm.cluster.site_id else None
-        )
+        vm = vmiface.virtual_machine
+        try:
+            site = vm.site
+        except Exception:
+            site = None
         _add_site(vmiface.untagged_vlan_id, site)
 
     # 4. VMInterfaces – tagged_vlans (via table M2M)
@@ -219,13 +222,13 @@ def suggest_vlan_groups():
         for row in (
             vm_tagged_through.objects
             .filter(vlan_id__in=vlan_pks)
-            .select_related('vminterface__virtual_machine__site',
-                            'vminterface__virtual_machine__cluster__site')
+            .select_related('vminterface__virtual_machine')
         ):
-            vm   = row.vminterface.virtual_machine
-            site = vm.site if vm.site_id else (
-                vm.cluster.site if vm.cluster_id and vm.cluster.site_id else None
-            )
+            vm = row.vminterface.virtual_machine
+            try:
+                site = vm.site
+            except Exception:
+                site = None
             _add_site(row.vlan_id, site)
     except Exception:
         pass
